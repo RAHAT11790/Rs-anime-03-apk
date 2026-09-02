@@ -1,4 +1,4 @@
-name: Build Android APK
+name: Build and Release APK
 
 on:
   push:
@@ -22,14 +22,21 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Grant Execute Permission for Gradle
-        run: chmod +x gradlew || true
+      - name: Create Dummy env files
+        run: |
+          touch .env
+          touch .env.example
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.11.1
 
       - name: Build Debug APK
-        run: gradle assembleDebug --stacktrace
+        run: gradle :app:assembleDebug --stacktrace --no-daemon
 
-      - name: Upload APK
+      - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: RS-Anime-App
+          name: RS-Anime-v1.0-Debug
           path: app/build/outputs/apk/debug/*.apk
