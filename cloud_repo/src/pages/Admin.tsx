@@ -1,0 +1,11997 @@
+import { useState, useEffect, useRef, useCallback, useMemo, useDeferredValue, useTransition, startTransition, forwardRef, memo, lazy, Suspense } from "react";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
+import InlineBackdropAi from "@/components/admin/InlineBackdropAi";
+import CachedImg, { preloadCachedImages } from "@/components/CachedImg";
+import { db, ref, onValue, push, set, remove, update, get, query, orderByChild, limitToLast, auth, googleProvider, signInWithPopup } from "@/lib/firebase";
+import { supabase } from "@/integrations/supabase/client";
+import { animeSaltApi } from '@/lib/animeSaltApi';
+import { useBranding } from "@/hooks/useBranding";
+type PushProgress = { phase: string; totalTokens?: number; totalUsers?: number; sent: number; success: number; failed: number; invalidRemoved: number; failReasons?: Record<string, number> };
+import PremiumUsersManager from "@/components/admin/PremiumUsersManager";
+import { toast } from "sonner";
+import {
+ LayoutDashboard, FolderOpen, Film, Video, Users, Bell, Zap, PlusCircle, CloudDownload,
+ Menu, X, MoreVertical, RefreshCw, Plus, Download, Trash2, Edit, Eye, EyeOff,
+ Shield, LogOut, Search, Save, ChevronDown, ChevronUp, Send, Link, ChevronLeft, ChevronRight,
+ Lock, Unlock, KeyRound, AlertTriangle, Power, Settings, MessageCircle, Reply, BarChart3, Activity, TrendingUp, Check, List, Star, Pin,
+ Upload, Loader2, CheckCircle, XCircle, Clock, Image, Mail, Sparkles, Bot, CalendarDays, Database, Crown, Cloud, GripVertical, Layers
+} from "lucide-react";
+
+import { TMDB_API_KEY, TMDB_BASE_URL, TMDB_IMG_BASE, SITE_URL, SITE_NAME, SITE_ICON_URL, TELEGRAM_CHANNEL, TELEGRAM_CHANNEL_URL, TELEGRAM_ADMIN_URL, CLOUDFLARE_CDN_URL, SUPABASE_URL, SUPABASE_ANON_KEY } from "@/lib/siteConfig";
+import { EDGE_FUNCTIONS, DEFAULT_CF_FUNCTIONS, type EdgeFunctionName, type EdgeRouterConfig, type CloudFunction, checkFunctionStatus, getAllFunctions, getEdgeFunctionUrl, normalizeFunctionEndpointUrl } from "@/lib/edgeFunctionRouter";
+import { toOpaqueUrlToken } from "@/lib/anPlaybackProxy";
+
+import {
+ buildAdminContentIndexItem,
+ fetchAdminCount,
+ fetchAdminContentIndex,
+ fetchRecentAdminContentList,
+ mergeAdminContentLists,
+  readCachedAdminContentList,
+  isAdminContentCacheFresh,
+  invalidateAdminContentCache,
+ removeAdminContentIndex,
+ sortAdminContentList,
+ upsertAdminContentIndex,
+ writeCachedAdminContentList,
+ type AdminContentKind,
+} from "@/lib/adminContentIndex";
+const WeeklyEpTabButton = () => null;
+const WeeklyEpManager = () => null;
+// AdminNotificationBell removed
+
+import EgdManager from "@/components/admin/EgdManager";
+import CloudflareManager from "@/components/admin/CloudflareManager";
+import { EDGE_FUNCTION_LIBRARY } from "@/lib/edgeFunctionCodeLibrary";
+import AdsterraConfig from "@/components/admin/AdsterraConfig";
+import AdsterraAnalytics from "@/components/admin/AdsterraAnalytics";
+import BackdropAiReplacer from "@/components/admin/BackdropAiReplacer";
+import ApkDownloadCenter from "@/components/admin/ApkDownloadCenter";
+import FirebaseAnalyzer from "@/components/admin/FirebaseAnalyzer";
+import AnimeNameExporter from "@/components/admin/AnimeNameExporter";
+import TelegramWelcomeManager from "@/components/admin/TelegramWelcomeManager";
+import VideoServersManager from "@/components/admin/VideoServersManager";
+import LiveTvManager from "@/components/admin/LiveTvManager";
+import TgUrlChangerManager from "@/components/admin/TgUrlChangerManager";
+import UrlChangerManager from "@/components/admin/UrlChangerManager";
+
+import SecurityCenter from "@/components/admin/SecurityCenter";
+import { logAdminAccess, isBlocked, isOwnerEmail, rememberDeviceName, subscribeGlobalLogout } from "@/lib/securityGuard";
+
+// Heavy admin sections are lazy-loaded so the main Admin shell stays responsive.
+const WeeklyEpisodeManager = lazy(() => import("@/components/admin/WeeklyEpisodeManager"));
+
+const AnManager = lazy(() => import("@/components/admin/AnManager"));
+const DailyTaskManager = lazy(() => import("@/components/admin/DailyTaskManager"));
+
+const buildEpisodeShareUrl = (animeId: string, seasonIdx?: number, epIdx?: number) => {
+ const params = new URLSearchParams();
+ if (seasonIdx !== undefined) params.set("s", String(Math.max(0, seasonIdx) + 1));
+ if (epIdx !== undefined) params.set("e", String(Math.max(0, epIdx) + 1));
+ const qs = params.toString();
+ return `${SITE_URL}/watch/${encodeURIComponent(animeId)}${qs ? `?${qs}` : ""}`;
+};
+
+const getEpisodeIndexForShare = (season: any, episodeNumber: unknown, fallbackIdx = 0) => {
+ const num = Number(episodeNumber);
+ const episodes = Array.isArray(season?.episodes) ? season.episodes : [];
+ if (Number.isFinite(num) && num > 0) {
+  const exactIdx = episodes.findIndex((ep: any) => Number(ep?.episodeNumber) === num);
+  if (exactIdx >= 0) return exactIdx;
+  return Math.max(0, Math.floor(num) - 1);
+ }
+ return Math.max(0, fallbackIdx);
+};
+
+const toPushImageUrl = (value: unknown) => {
+ const url = String(value || "").trim();
+ return url ? url.replace('/w780/', '/w1280/').replace('/original/', '/w1280/') : "";
+};
+
+const buildBrowserPushTitle = (title: unknown) => `ğŸ¬ ${String(title || "New Episode").trim()}`;
+const buildBrowserPushBody = (title: unknown, seasonName: unknown, episodeText: unknown) => {
+ const t = String(title || "Anime").trim();
+ const s = String(seasonName || "Season 1").trim();
+ const e = String(episodeText || "New episode").trim();
+ return `${t} â€¢ ${s} â€¢ ${e}`;
+};
+
+type BrowserPushRecipient = { userId: string; name: string; email: string };
+
+
+const TG_DUB_TAGS = {
+ official: "#á´Ò“Ò“Éªá´„Éªá´€ÊŸ",
+ fandub: "#Ò“á´€É´á´…á´œÊ™",
+} as const;
+const TG_DIVIDER = "â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”";
+const DEFAULT_TG_HASHTAGS = "#CARTOONFUNNY03 #ANIME";
+const DEFAULT_TG_BUTTON_TEXT = "ğŸ“¥ WATCH AND DOWNLOAD ğŸ“¥";
+const getTelegramDubTag = (dubType: "official" | "fandub") => TG_DUB_TAGS[dubType];
+
+// ===== Telegram post template engine =====
+// Every line below is admin-editable (Template Editor) and stored in
+// Firebase at admin/tgTemplates/{series|movie}. Tokens are resolved by
+// renderTelegramTemplate() and shared by both the preview and the sender.
+export const TG_TEMPLATE_TOKENS = [
+  "{title}", "{season}", "{totalEpisodes}", "{episodeLine}", "{movieType}",
+  "{quality}", "{rating}", "{genres}", "{languages}", "{dubTag}", "{status}",
+  "{hashtags}", "{footerLinks}", "{divider}", "{watchUrl}", "{owner}",
+] as const;
+
+const DEFAULT_TG_TEMPLATE_SERIES = `â™¨ï¸ <b>TÉªá´›ÊŸá´‡ :</b> {title}
+â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+â”‚ âœ¦ <b>Sá´‡á´€sá´É´ :</b> {season}
+â”‚ âœ¦ <b>Eá´˜Éªsá´á´…á´‡s :</b> {totalEpisodes}
+â”‚ âœ¦ <b>Aá´œá´…Éªá´ :</b> ğŸ§ {languages} {dubTag}
+â”‚ âœ¦ <b>Qá´œá´€ÊŸÉªá´›Ê :</b> {quality}
+â”‚ âœ¦ <b>Rá´€á´›ÉªÉ´É¢ :</b> â­ {rating}/10
+â”‚ âœ¦ <b>Gá´‡É´Ê€á´‡s :</b> {genres}
+â”‚ âœ¦ <b>Sá´›á´€á´›á´œs :</b> {status}
+â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+{divider}
+ğŸ“Œ {episodeLine}
+{divider}
+{footerLinks}
+{divider}
+{hashtags} {dubTag}`;
+
+const DEFAULT_TG_TEMPLATE_MOVIE = `ğŸ¬ <b>TÉªá´›ÊŸá´‡ :</b> {title}
+â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+â”‚ âœ¦ <b>TÊá´˜á´‡ :</b> {movieType}
+â”‚ âœ¦ <b>Aá´œá´…Éªá´ :</b> ğŸ§ {languages} {dubTag}
+â”‚ âœ¦ <b>Qá´œá´€ÊŸÉªá´›Ê :</b> {quality}
+â”‚ âœ¦ <b>Rá´€á´›ÉªÉ´É¢ :</b> â­ {rating}/10
+â”‚ âœ¦ <b>Gá´‡É´Ê€á´‡s :</b> {genres}
+â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+{divider}
+ğŸ“Œ {movieType} Aá´…á´…á´‡á´…
+{divider}
+{footerLinks}
+{divider}
+{hashtags} {dubTag}`;
+
+const DEFAULT_TG_OWNER_USERNAME = "rs_woner";
+
+export type TgTemplateVars = Record<string, string>;
+
+const renderTelegramTemplate = (template: string, vars: TgTemplateVars) =>
+  String(template || "")
+    .replace(/\{(\w+)\}/g, (m, key) => (key in vars ? vars[key] : m))
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
+const stripTelegramHtml = (value: string) =>
+  String(value || "").replace(/<a href="([^"]*)">([^<]*)<\/a>/g, "$2 â†’ $1").replace(/<[^>]+>/g, "");
+
+const normalizeTelegramBaseHashtags = (tags: string) => {
+ const normalized = String(tags || DEFAULT_TG_HASHTAGS)
+ .replace(/#Éªá´„Ò“á´€É´Éªá´á´‡/gi, "#CARTOONFUNNY03")
+ .replace(/#á´€É´Éªá´á´‡|#anime/gi, "#ANIME");
+ const cleaned = normalized
+ .split(/\s+/)
+ .map(tag => tag.trim())
+ .filter(Boolean)
+ .filter(tag => !/(official|fandub|á´Ò“Ò“Éªá´„Éªá´€ÊŸ|Ò“á´€É´á´…á´œÊ™|ğğŸğŸğ¢ğœğ¢ğšğ¥|ğ…ğšğ§ğğ®ğ›)/i.test(tag))
+ .join(" ")
+ .trim();
+ return cleaned || DEFAULT_TG_HASHTAGS;
+};
+const normalizeTelegramButtonText = (value: string) => String(value || DEFAULT_TG_BUTTON_TEXT)
+ .replace(/ğ–ğ€ğ“ğ‚ğ‡\s*ğ€ğğƒ\s*ğƒğğ–ğğ‹ğğ€ğƒ/g, "WATCH AND DOWNLOAD")
+ .replace(/ğğŸğŸğ¢ğœğ¢ğšğ¥(?:\s*ğğ®ğ›)?|ğğŸğŸğ¢ğœğ¢ğšğ¥ğğ®ğ›|Official\s*Dub|Official/gi, TG_DUB_TAGS.official)
+ .replace(/ğ…ğšğ§ğğ®ğ›|Fan\s*Dub|Fandub/gi, TG_DUB_TAGS.fandub)
+ .replace(/\s+/g, " ")
+ .trim();
+
+type Section = "dashboard" | "categories" | "webseries" | "weekly-episode" | "movies" | "users" | "new-releases" | "tmdb-fetch" | "add-content" | "redeem-codes" | "bkash-payments" | "premium-users" | "device-limits" | "maintenance" | "free-access" | "settings" | "comments" | "analytics" | "auto-import" | "animesalt-manager" | "telegram-post" | "tg-url-changer" | "live-support" | "ui-themes" | "hero-pinned" | "edge-router" | "branding" | "ai-config" | "live-tv" | "url-changer" | "link-checker" | "video-servers" | "unlock-duration" | "email-service" | "apk-dw" | "egd-manager" | "cf-manager" | "fb-analytics" | "adsterra" | "backdrop-ai" | "security-center" | "task-manager";
+
+const ADMIN_BN_TRANSLATIONS: Array<[RegExp, string]> = [
+ [/AI à¦¸à§‡à¦Ÿà¦¿à¦‚à¦¸ à¦¸à§‡à¦­ à¦¹à¦¯à¦¼à§‡à¦›à§‡/g, "AI settings saved"], [/AI à¦šà¦¾à¦²à§ à¦¹à¦¯à¦¼à§‡à¦›à§‡/g, "AI enabled"], [/AI à¦¬à¦¨à§à¦§ à¦¹à¦¯à¦¼à§‡à¦›à§‡/g, "AI disabled"], [/AI à¦šà¦¾à¦²à§ à¦†à¦›à§‡/g, "AI is enabled"], [/AI à¦¬à¦¨à§à¦§ à¦†à¦›à§‡/g, "AI is disabled"], [/AI URL enter à¦†à¦—à§‡/g, "Enter the AI URL first"],
+ [/à¦¥à¦¿à¦® à¦…à§à¦¯à¦¾à¦•à§à¦Ÿà¦¿à¦­ à¦¹à¦¯à¦¼à§‡à¦›à§‡/g, "theme activated"], [/à¦¥à¦¿à¦® à¦¸à§‡à¦­ à¦¬à§à¦¯à¦°à§à¦¥/g, "Theme save failed"], [/à§¨à§¦à¦Ÿà¦¿ à¦¥à¦¿à¦® à¦¥à§‡à¦•à§‡ à¦ªà¦›à¦¨à§à¦° à¦¥à¦¿à¦® à¦¸à¦¿à¦²à§‡à¦•à§à¦Ÿ à¦•à¦°à§‹à¥¤ all à¦‡à¦‰à¦œà¦¾à¦°à§‡à¦° UI together à¦šà§‡à¦à§à¦œ will beà¥¤/g, "Choose a theme preset. The UI updates for every user instantly."],
+ [/à¦¬à§à¦¯à¦¾à¦•à¦—à§à¦°à¦¾à¦‰à¦¨à§à¦¡ à¦‡à¦®à§‡à¦œ à¦¸à§‡à¦Ÿ à¦¹à¦¯à¦¼à§‡à¦›à§‡/g, "Background image set"], [/à¦¬à§à¦¯à¦¾à¦•à¦—à§à¦°à¦¾à¦‰à¦¨à§à¦¡ à¦‡à¦®à§‡à¦œ à¦°à¦¿à¦®à§à¦­ à¦¹à¦¯à¦¼à§‡à¦›à§‡/g, "Background image removed"], [/à¦¬à§à¦¯à¦¾à¦•à¦—à§à¦°à¦¾à¦‰à¦¨à§à¦¡ à¦›à¦¬à¦¿à¦° URL/g, "Background image URL"], [/à¦•à¦¾à¦¸à§à¦Ÿà¦® à¦¬à§à¦¯à¦¾à¦•à¦—à§à¦°à¦¾à¦‰à¦¨à§à¦¡ à¦‡à¦®à§‡à¦œ/g, "Custom Background Image"], [/à¦¬à§à¦¯à¦¾à¦•à¦—à§à¦°à¦¾à¦‰à¦¨à§à¦¡ à¦¸à§‡à¦­ à¦•à¦°à§à¦¨/g, "Save Background"],
+ [/à¦¸à§‡à¦­ à¦¬à§à¦¯à¦°à§à¦¥/g, "Save failed"], [/à¦Ÿà¦¾à¦‡à¦Ÿà§‡à¦² enter/g, "Enter a title"], [/à¦›à¦¬à¦¿ enter \(URL à¦¬à¦¾ à¦†à¦ªà¦²à§‹à¦¡\)/g, "Add an image URL or upload an image"], [/à¦¹à¦¿à¦°à§‹ à¦¸à§à¦²à¦¾à¦‡à¦¡à¦¾à¦°à§‡ à¦ªà§‹à¦¸à§à¦Ÿ à¦•à¦°à¦¾ à¦¹à¦¯à¦¼à§‡à¦›à§‡/g, "posted to the hero slider"], [/à¦ªà§‹à¦¸à§à¦Ÿ à¦•à¦°à¦¾ à¦¬à§à¦¯à¦°à§à¦¥/g, "Post failed"], [/à¦ªà§‹à¦¸à§à¦Ÿ à¦¡à¦¿à¦²à¦¿à¦Ÿ à¦¹à¦¯à¦¼à§‡à¦›à§‡/g, "Post deleted"], [/à¦¡à¦¿à¦²à¦¿à¦Ÿ à¦¬à§à¦¯à¦°à§à¦¥/g, "Delete failed"],
+ [/à¦•à¦¾à¦¸à§à¦Ÿà¦® à¦¹à¦¿à¦°à§‹ à¦ªà§‹à¦¸à§à¦Ÿ à¦¤à§ˆà¦°à¦¿ à¦•à¦°à§à¦¨/g, "Create Custom Hero Post"], [/à¦›à¦¬à¦¿ à¦†à¦ªà¦²à§‹à¦¡ à¦•à¦°à§à¦¨ à¦¬à¦¾ à¦²à¦¿à¦‚à¦• enter, à¦Ÿà¦¾à¦‡à¦Ÿà§‡à¦² à¦“ à¦¬à¦¿à¦¬à¦°à¦£ à¦²à¦¿à¦–à§à¦¨à¥¤ à¦•à¦¾à¦²à¦¾à¦° à¦“ à¦«à¦¨à§à¦Ÿ à¦•à¦¾à¦¸à§à¦Ÿà¦®à¦¾à¦‡à¦œ à¦•à¦°à§à¦¨à¥¤/g, "Upload an image or paste a link, then add title, description, colors, and font."], [/à¦¬à§à¦¯à¦¾Noà¦° à¦›à¦¬à¦¿/g, "Banner Image"], [/à¦›à¦¬à¦¿à¦° URL enter/g, "Enter image URL"], [/à¦Ÿà¦¾à¦‡à¦Ÿà§‡à¦² à¦•à¦¾à¦²à¦¾à¦°/g, "Title Color"], [/à¦Ÿà¦¾à¦‡à¦Ÿà§‡à¦² à¦«à¦¨à§à¦Ÿ/g, "Title Font"], [/à¦¬à¦¿à¦¬à¦°à¦£ \/ à¦¡à§‡à¦¸à¦•à§à¦°à¦¿à¦ªà¦¶à¦¨/g, "Description"], [/à¦ªà§‹à¦¸à§à¦Ÿà§‡à¦° à¦Ÿà¦¾à¦‡à¦Ÿà§‡à¦²/g, "Post title"], [/à¦¬à¦¿à¦¸à§à¦¤à¦¾à¦°à¦¿à¦¤ à¦¬à¦¿à¦¬à¦°à¦£ à¦²à¦¿à¦–à§à¦¨\.\.\. \(click à¦•à¦°à¦²à§‡ à¦¡à¦¿à¦Ÿà§‡à¦‡à¦² à¦ªà§‡à¦œà§‡ à¦à¦Ÿà¦¾ à¦–à¦¾à¦¬à§‡\)/g, "Write the full description shown on the detail page"], [/à¦ªà§‹à¦¸à§à¦Ÿ à¦•à¦°à§à¦¨/g, "Post"], [/à¦ªà§‹à¦¸à§à¦Ÿ à¦•à¦°à¦¾ item/g, "Posted Items"], [/no à¦ªà§‹à¦¸à§à¦Ÿ à¦¨à§‡à¦‡/g, "No posts yet"],
+ [/all à¦à¦¨à¦¿à¦®à§‡ category à¦…à§à¦¯à¦¾à¦¸à¦¾à¦‡à¦¨/g, "Bulk Anime Category Assignment"], [/à¦multiple à¦à¦¨à¦¿à¦®à§‡ à¦¸à¦¿à¦²à§‡à¦•à§à¦Ÿ à¦•à¦°à§‡ together category à¦¸à§‡à¦Ÿ à¦•à¦°à§à¦¨à¥¤/g, "Select multiple anime and set their category together."], [/à¦à¦¨à¦¿à¦®à§‡ à¦¸à¦¾à¦°à§à¦š/g, "Search anime"], [/category/g, "Category"], [/à¦Ÿà¦¿ à¦¸à¦¿à¦²à§‡à¦•à§à¦Ÿà§‡à¦¡/g, "selected"], [/à¦¸à§‡à¦Ÿ à¦•à¦°à§à¦¨/g, "Set"], [/all à¦¸à¦¿à¦²à§‡à¦•à¦¶à¦¨ à¦¬à¦¾à¦¤à¦¿à¦²/g, "Clear all selections"], [/no à¦à¦¨à¦¿à¦®à§‡ à¦¨à§‡à¦‡/g, "No anime found"], [/category à¦¸à§‡à¦Ÿ à¦¹à¦¯à¦¼à§‡à¦›à§‡/g, "category set"],
+ [/à¦Ÿà§‡à¦²à¦¿à¦—à§à¦°à¦¾à¦®à§‡ à¦ªà§‹à¦¸à§à¦Ÿ à¦•à¦°à§à¦¨/g, "Post to Telegram"], [/à¦šà§à¦¯à¦¾à¦¨à§‡à¦² à¦†à¦‡à¦¡à¦¿/g, "Channel ID"], [/à¦¸à¦¿à¦œà¦¨/g, "Season"], [/à¦¨à¦¤à§à¦¨ EP/g, "New EP"], [/à¦ªà§‹à¦¸à§à¦Ÿà¦¾à¦° URL/g, "Poster URL"], [/à¦¬à¦¾à¦¦ enter/g, "Cancel"], [/à¦ªà§‹à¦¸à§à¦Ÿà§‡ à¦¯à¦¾à¦¨/g, "Go to Post"], [/à¦šà§à¦¯à¦¾à¦¨à§‡à¦²à§‡ à¦ªà§‹à¦¸à§à¦Ÿ sendà§‹ à¦¹à¦¯à¦¼à§‡à¦›à§‡/g, "channel posts sent"], [/à¦šà§à¦¯à¦¾à¦¨à§‡à¦²à§‡ sendà§‹ à¦¹à¦¯à¦¼à§‡à¦›à§‡/g, "channels sent"], [/all à¦šà§à¦¯à¦¾à¦¨à§‡à¦²à§‡ à¦ªà§‹à¦¸à§à¦Ÿ à¦¬à§à¦¯à¦°à§à¦¥ à¦¹à¦¯à¦¼à§‡à¦›à§‡/g, "Posting failed for all channels"], [/all à¦šà§à¦¯à¦¾à¦¨à§‡à¦²à§‡ à¦¬à§à¦¯à¦°à§à¦¥/g, "All channels failed"], [/à¦šà§à¦¯à¦¾à¦¨à§‡à¦²à§‡ à¦¸à¦«à¦²/g, "channels succeeded"],
+ [/Send Money à¦•à¦°à§à¦¨ à¦¨à¦¿à¦šà§‡à¦° Noà¦®à§à¦¬à¦¾à¦°à§‡ à¦à¦¬à¦‚ Transaction ID à¦¸à¦¾à¦¬à¦®à¦¿à¦Ÿ à¦•à¦°à§à¦¨à¥¤/g, "Send Money to the number below and submit the Transaction ID."], [/Anime-specific genres à¦“ rating à¦²à§‹à¦¡ à¦¹à¦¯à¦¼à§‡à¦›à§‡/g, "Anime-specific genres and rating loaded"], [/à¦this ID à¦¥à§‡à¦•à§‡ genre data à¦ªà¦¾à¦“à¦¯à¦¼à¦¾ à¦¯à¦¾à¦¯à¦¼à¦¨à¦¿/g, "No genre data found for this ID"],
+ [/all active free access cancel à¦•à¦°à¦¤à§‡ want\?/g, "Cancel all active free access?"], [/all free access à¦¬à¦¾à¦¤à¦¿à¦² à¦•à¦°à¦¾ à¦¹à¦¯à¦¼à§‡à¦›à§‡/g, "All free access has been canceled"], [/à¦à¦° free access à¦¬à¦¾à¦¤à¦¿à¦² à¦•à¦°à¦¤à§‡ want\?/g, "free access should be canceled?"], [/à¦¨à¦¿à¦°à§à¦¦à¦¿à¦·à§à¦Ÿ user's free access à¦¬à¦¾à¦¤à¦¿à¦² à¦•à¦°à¦¾ à¦¹à¦¯à¦¼à§‡à¦›à§‡/g, "Selected user's free access has been canceled"],
+ [/à¦à¦ªà¦¿à¦¸à§‹à¦¡ Noà¦® TMDB à¦¥à§‡à¦•à§‡ à¦²à§‹à¦¡ à¦¹à¦¯à¦¼à§‡à¦›à§‡/g, "episode names loaded from TMDB"], [/à¦…à¦Ÿà§‹ category/g, "Auto category"], [/à¦†à¦—à§‡ à¦¥à§‡à¦•à§‡this à¦†à¦›à§‡/g, "already exists"], [/AnimeSalt contà§‡à¦¨à§à¦Ÿ New Release à¦ à¦¸à¦¾à¦ªà§‹à¦°à§à¦Ÿ à¦•à¦°à¦¾ à¦¹à¦¯à¦¼ No/g, "AnimeSalt content is not supported in New Releases"],
+ [/JSON à¦Ÿà§‡à¦•à§à¦¸à¦Ÿ Paste à¦•à¦°à§à¦¨/g, "Paste JSON text"], [/à¦…à¦¬à§ˆà¦§ JSON à¦«à¦°à¦®à§à¦¯à¦¾à¦Ÿà¥¤ episodes à¦¬à¦¾ seasons array à¦¥à¦¾à¦•à¦¾ neededà¥¤/g, "Invalid JSON format. An episodes or seasons array is required."], [/à¦…à¦¬à§ˆà¦§ JSONà¥¤ episodes array à¦¥à¦¾à¦•à¦¾ neededà¥¤/g, "Invalid JSON. An episodes array is required."], [/no à¦à¦ªà¦¿à¦¸à§‹à¦¡ à¦ªà¦¾à¦“à¦¯à¦¼à¦¾ à¦¯à¦¾à¦¯à¦¼à¦¨à¦¿ JSON-à¦/g, "No episodes found in the JSON"], [/à¦Ÿà¦¿ à¦¸à¦¿à¦œà¦¨ JSON à¦¥à§‡à¦•à§‡ à¦‡à¦®à¦ªà§‹à¦°à§à¦Ÿ à¦¹à¦¯à¦¼à§‡à¦›à§‡/g, "seasons imported from JSON"], [/à¦Ÿà¦¿ à¦à¦ªà¦¿à¦¸à§‹à¦¡ JSON à¦¥à§‡à¦•à§‡ à¦‡à¦®à¦ªà§‹à¦°à§à¦Ÿ à¦¹à¦¯à¦¼à§‡à¦›à§‡/g, "episodes imported from JSON"],
+ [/à¦this à¦¸à¦¿à¦°à¦¿à¦œà§‡à¦° all à¦²à¦¿à¦‚à¦•à§‡ à¦¡à§‹à¦®à§‡à¦‡à¦¨ à¦°à¦¿à¦ªà§à¦²à§‡à¦¸ à¦•à¦°à§‹à¥¤ à¦¸à§‡à¦­ à¦•à¦°à¦²à§‡this Firebase-à¦ à¦¯à¦¾à¦¬à§‡à¥¤/g, "Replace domains in every link for this series. Saving writes the changes to the database."], [/à¦²à¦¿à¦‚à¦• à¦¥à§‡à¦•à§‡ à¦¡à§‹à¦®à§‡à¦‡à¦¨ à¦¬à§‡à¦° à¦•à¦°à§‹/g, "extract domain from links"], [/à¦°à¦¿à¦ªà§à¦²à§‡à¦¸ à¦¹à¦¯à¦¼à§‡à¦›à§‡/g, "replaced"], [/à¦this à¦¸à¦¿à¦°à¦¿à¦œà§‡à¦° all à¦¸à¦¿à¦œà¦¨ à¦“ à¦à¦ªà¦¿à¦¸à§‹à¦¡à§‡à¦° JSON à¦¡à¦¾à¦‰à¦¨à¦²à§‹à¦¡ à¦•à¦°à§‹à¥¤/g, "Download JSON for all seasons and episodes in this series."],
+ [/New Release à¦¤à§ˆà¦°à¦¿ à¦•à¦°à§à¦¨/g, "Create New Release"], [/à¦¸à¦¿à¦œà¦¨ à¦“ à¦à¦ªà¦¿à¦¸à§‹à¦¡ à¦¸à¦¿à¦²à§‡à¦•à§à¦Ÿ à¦•à¦°à§à¦¨/g, "select season and episode"], [/à¦®à§‹à¦Ÿ FCM à¦Ÿà§‹à¦•à§‡à¦¨/g, "Total FCM Tokens"], [/à¦ªà¦¿à¦‚/g, "Ping"], [/à¦œà¦¨/g, "users"], [/all à¦®à§à¦›à§à¦¨/g, "Clear All"], [/anyone à¦à¦–à¦¨à§‹ à¦ªà¦¾à¦¸à¦“à¦¯à¦¼à¦¾à¦°à§à¦¡ à¦ªà¦°à¦¿à¦¬à¦°à§à¦¤à¦¨ à¦•à¦°à§‡à¦¨à¦¿/g, "No password reset logs yet"],
+ [/à¦this à¦²à¦¿à¦‚à¦• à¦¯à§‡no à¦œà¦¾à¦¯à¦¼à¦—à¦¾à¦¯à¦¼ à¦¶à§‡à¦¯à¦¼à¦¾à¦° à¦•à¦°à§à¦¨à¥¤ à¦ªà§à¦°à¦¤à¦¿à¦Ÿà¦¿ à¦‡à¦‰à¦œà¦¾à¦° à¦“à¦ªà§‡à¦¨ à¦•à¦°à¦²à§‡ different different à¦°â€à§à¦¯à¦¾à¦¨à§à¦¡à¦® à¦¸à¦®à¦¯à¦¼ à¦ªà¦¾à¦¬à§‡ \(à§¨à§ªh - à§ªà§®h\)à¥¤/g, "Share this link anywhere. Each user gets a different random free-access duration (24hâ€“48h)."], [/chance/g, "chance"], [/à¦˜à¦¨à§à¦Ÿà¦¾/g, "hours"], [/à¦Ÿà¦¿/g, ""],
+ [/Webhook à¦¸à§‡à¦Ÿ à¦•à¦°à¦²à§‡ anyone à¦¬à¦Ÿà§‡ \/start à¦¦à¦¿à¦²à§‡ à¦¸à§à¦¨à§à¦¦à¦° Welcome à¦®à§‡à¦¸à§‡à¦œ à¦ªà¦¾à¦¬à§‡ â€” à¦“à¦¯à¦¼à§‡à¦¬à¦¸à¦¾à¦‡à¦Ÿà§‡à¦° à¦¡à¦¿à¦Ÿà§‡à¦²à¦¸, à¦šà§à¦¯à¦¾à¦¨à§‡à¦² à¦²à¦¿à¦‚à¦• à¦¸à¦¹à¥¤/g, "Set the webhook so /start sends a polished welcome message with website details and channel links."], [/à¦à¦–à¦¾à¦¨à§‡ only Telegram Post function URL à¦¥à¦¾à¦•à¦¬à§‡à¥¤ à¦¬à¦¾à¦•à¦¿ cutà¦¾ à¦“à§Ÿà¦¾ all router block à¦¬à¦¾à¦¦ à¦“à§Ÿà¦¾ à¦¹à§Ÿà§‡à¦›à§‡à¥¤/g, "Only the Telegram Post function URL stays here. The old router blocks were removed."], [/function à¦¹à¦¿à¦¸à§‡à¦¬à§‡ à¦à¦Ÿà¦¾ use à¦•à¦°à§‹/g, "function"],
+ [/all à¦¸à¦¿à¦°à¦¿à¦œ/g, "All Series"], [/à¦°à¦¿à¦«à§à¦°à§‡à¦¶ à¦¶à§à¦°à§/g, "Start Refresh"], [/à¦¸à¦¿à¦²à§‡à¦•à§à¦Ÿ à¦•à¦°à§à¦¨/g, "Select"], [/à¦¸à¦¿à¦°à¦¿à¦œ/g, "series"], [/à¦à¦¨à¦¿à¦®à§‡/g, "anime"], [/à¦¬à¦¾à¦•à¦¿/g, "remaining"], [/sendà§‹ à¦¹à¦¯à¦¼à§‡ à¦—à§‡à¦›à§‡/g, "already sent"], [/Reset à¦•à¦°à¦²à§‡ all à¦à¦¨à¦¿à¦®à§‡ à¦†à¦¬à¦¾à¦° sendà§‹ à¦¯à¦¾à¦¬à§‡à¥¤ à¦¨à¦¿à¦¶à§à¦šà¦¿à¦¤\?/g, "Reset lets every anime be sent again. Continue?"], [/all à¦à¦¨à¦¿à¦®à§‡ à¦†à¦¬à¦¾à¦° sendà§‹ à¦¯à¦¾à¦¬à§‡/g, "all anime can be sent again"],
+ [/à§¦/g, "0"], [/à§§/g, "1"], [/à§¨/g, "2"], [/à§©/g, "3"], [/à§ª/g, "4"], [/à§«/g, "5"], [/à§¬/g, "6"], [/à§­/g, "7"], [/à§®/g, "8"], [/à§¯/g, "9"],
+];
+
+const translateAdminText = (value: string) => ADMIN_BN_TRANSLATIONS.reduce((text, [pattern, replacement]) => text.replace(pattern, replacement), value);
+const applyAdminEnglish = (root: ParentNode) => {
+ const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+ const textNodes: Text[] = [];
+ while (walker.nextNode()) textNodes.push(walker.currentNode as Text);
+ textNodes.forEach((node) => {
+ const next = translateAdminText(node.nodeValue || "");
+ if (next !== node.nodeValue) node.nodeValue = next;
+ });
+ if (root instanceof Element || root instanceof Document) {
+ root.querySelectorAll?.("input, textarea, button, [title], [aria-label]").forEach((el) => {
+ ["placeholder", "title", "aria-label"].forEach((attr) => {
+ const current = el.getAttribute(attr);
+ if (!current) return;
+ const next = translateAdminText(current);
+ if (next !== current) el.setAttribute(attr, next);
+ });
+ });
+ }
+};
+
+const ADMIN_VISIBLE_CARD_LIMIT = 180;
+const ADMIN_DROPDOWN_LIMIT = 60;
+const ADMIN_CONTENT_RELOAD_TTL_MS = 10 * 60 * 1000;
+const ADMIN_POSTER_WARM_LIMIT = 220;
+
+// Module-scope caches so tab-switches inside the admin panel feel instant:
+// the last snapshot survives unmount and is re-used as the initial state on
+// re-mount, exactly like the AnimeCard `watchlistCacheByUser` pattern.
+// LocalStorage-backed "warm start" for the dashboard's Weekly Episode +
+// Recent Content strip so first paint after refresh is instant instead of
+// waiting for Firebase.
+const WEEKLY_SCHEDULE_CACHE_KEY = "admin_dashboard_weeklySchedule_v1";
+let weeklyScheduleCache: Record<string, any> = (() => {
+ try {
+  const raw = typeof window !== "undefined" ? window.localStorage.getItem(WEEKLY_SCHEDULE_CACHE_KEY) : null;
+  return raw ? (JSON.parse(raw) || {}) : {};
+ } catch { return {}; }
+})();
+const writeWeeklyScheduleCache = (data: Record<string, any>) => {
+ weeklyScheduleCache = data || {};
+ try { window.localStorage.setItem(WEEKLY_SCHEDULE_CACHE_KEY, JSON.stringify(weeklyScheduleCache)); } catch {}
+};
+
+const adminIdle = (callback: () => void, timeout = 1200) => {
+ const idle = (window as any).requestIdleCallback;
+ if (typeof idle === "function") {
+  const id = idle(callback, { timeout });
+  return () => { try { (window as any).cancelIdleCallback?.(id); } catch {} };
+ }
+ const id = window.setTimeout(callback, Math.min(timeout, 350));
+ return () => window.clearTimeout(id);
+};
+
+const getAdminContentTime = (item: any) => Number(item?.updatedAt || item?.createdAt || 0);
+const sortAdminLatestFirst = (items: any[]) => [...items].sort((a: any, b: any) => getAdminContentTime(b) - getAdminContentTime(a));
+const areAdminContentListsSame = (a: any[] = [], b: any[] = []) => {
+ if (a === b) return true;
+ if (a.length !== b.length) return false;
+ for (let i = 0; i < a.length; i++) {
+  if (String(a[i]?.id || "") !== String(b[i]?.id || "")) return false;
+  if (String(a[i]?.poster || "") !== String(b[i]?.poster || "")) return false;
+  if (getAdminContentTime(a[i]) !== getAdminContentTime(b[i])) return false;
+ }
+ return true;
+};
+const buildSearchBigrams = (s: string) => {
+ const out = new Set<string>();
+ for (let i = 0; i < s.length - 1; i++) out.add(s.slice(i, i + 2));
+ return out;
+};
+const adminTitleSimilarity = (title: string, query: string, queryBigrams: Set<string>) => {
+ const t = String(title || "").toLowerCase();
+ if (!t) return 0;
+ if (t.includes(query)) return 1;
+ if (query.length < 2 || t.length < 2) return 0;
+ const titleBigrams = buildSearchBigrams(t);
+ let inter = 0;
+ queryBigrams.forEach(g => { if (titleBigrams.has(g)) inter++; });
+ return (2 * inter) / (queryBigrams.size + titleBigrams.size);
+};
+const filterAdminSeriesList = (items: any[], query: string) => {
+ const latestFirst = sortAdminLatestFirst(items);
+ const q = String(query || "").trim().toLowerCase();
+ if (!q) return latestFirst;
+ const qb = buildSearchBigrams(q);
+ return latestFirst
+  .map((item: any) => ({ item, score: adminTitleSimilarity(item?.title || "", q, qb) }))
+  .filter(x => x.score >= 0.5)
+  .sort((a, b) => b.score - a.score)
+  .map(x => x.item);
+};
+const filterAdminMovieList = (items: any[], query: string) => {
+ const q = String(query || "").trim().toLowerCase();
+ const latestFirst = sortAdminLatestFirst(items);
+ return q ? latestFirst.filter((item: any) => String(item?.title || "").toLowerCase().includes(q)) : latestFirst;
+};
+
+const yieldAdminFrame = () => new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+
+const AdminSectionLoader = ({ label }: { label: string }) => (
+ <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-8 text-center text-sm text-zinc-400">
+  <div className="mx-auto mb-3 h-7 w-7 animate-spin rounded-full border-2 border-white/10 border-t-purple-400" />
+  {label}
+ </div>
+);
+
+interface CastMember {
+ name: string;
+ character?: string;
+ photo: string;
+}
+
+interface Episode {
+ episodeNumber: number;
+ title: string;
+ link: string;
+ link480?: string;
+ link720?: string;
+ link1080?: string;
+ link4k?: string;
+ qualityLinks?: { default?: string; p480?: string; p720?: string; p1080?: string; p4k?: string };
+ audioTracks?: { language: string; label: string; link: string; audioUrl?: string; rawAudioUrl?: string; link480?: string; link720?: string; link1080?: string; link4k?: string; isDefault?: boolean }[];
+ defaultAudio?: { language: string; label: string; link: string; audioUrl?: string; rawAudioUrl?: string; isDefault?: boolean } | null;
+ subtitleTracks?: { language?: string; label: string; url: string }[];
+}
+
+interface Season {
+ name: string;
+ seasonNumber: number;
+ episodes: Episode[];
+}
+
+type SeasonsByLanguage = Record<string, Season[]>;
+
+import { THEME_PRESETS, type ThemePreset } from "@/lib/themePresets";
+
+// ==================== EMAIL SERVICE SECTION ====================
+const EmailServiceSection = ({ glassCard, inputClass, btnPrimary, btnSecondary }: { glassCard: string; inputClass: string; btnPrimary: string; btnSecondary: string }) => {
+ const [otpUrl, setOtpUrl] = useState("");
+ const [otpUrlInput, setOtpUrlInput] = useState("");
+ const [testing, setTesting] = useState(false);
+ const [testResult, setTestResult] = useState<{ alive: boolean; latency: number } | null>(null);
+ const [resetLogs, setResetLogs] = useState<any[]>([]);
+ const [loadingLogs, setLoadingLogs] = useState(true);
+
+ useEffect(() => {
+ const unsub = onValue(ref(db, "settings/emailService"), (snap) => {
+ const val = snap.val();
+ if (val) {
+ setOtpUrl(val.otpFunctionUrl || "");
+ setOtpUrlInput(val.otpFunctionUrl || "");
+ }
+ });
+ return () => unsub();
+ }, []);
+
+ useEffect(() => {
+ const unsub = onValue(ref(db, "passwordResets"), (snap) => {
+ const val = snap.val();
+ if (val) {
+ const arr = Object.entries(val).map(([k, v]: any) => ({ id: k, ...v }));
+ arr.sort((a: any, b: any) => (b.timestamp || 0) - (a.timestamp || 0));
+ setResetLogs(arr);
+ } else {
+ setResetLogs([]);
+ }
+ setLoadingLogs(false);
+ });
+ return () => unsub();
+ }, []);
+
+ const saveUrl = async () => {
+ await set(ref(db, "settings/emailService/otpFunctionUrl"), otpUrlInput.trim());
+ toast.success("âœ… Email Service URL saved!");
+ };
+
+ const testUrl = async () => {
+ if (!otpUrl) { toast.error("Set the URL first."); return; }
+ setTesting(true);
+ setTestResult(null);
+ const start = Date.now();
+ try {
+ const controller = new AbortController();
+ const t = setTimeout(() => controller.abort(), 8000);
+ const res = await fetch(otpUrl, { method: "GET", signal: controller.signal });
+ clearTimeout(t);
+ setTestResult({ alive: res.status < 500, latency: Date.now() - start });
+ } catch {
+ setTestResult({ alive: false, latency: Date.now() - start });
+ }
+ setTesting(false);
+ };
+
+ const clearLogs = async () => {
+ if (!confirm("Delete all password reset logs?")) return;
+ await remove(ref(db, "passwordResets"));
+ toast.success("Logs cleared.");
+ };
+
+ return (
+ <div className="space-y-4">
+ <h2 className="text-lg font-bold text-white flex items-center gap-2"><Mail size={18} className="text-indigo-400" /> Email Service</h2>
+
+ {/* OTP Function URL */}
+ <div className={`${glassCard} p-4 space-y-3`}>
+ <h3 className="text-sm font-semibold text-zinc-300 flex items-center gap-2">
+ <Link size={14} className="text-cyan-400" /> OTP Email Function URL
+ </h3>
+ <p className="text-[10px] text-zinc-500">
+ Enter the send-otp-email function URL here. If you later deploy on another platform, updating this URL will be enough.
+ </p>
+ <div className="flex gap-2">
+ <input value={otpUrlInput} onChange={e => setOtpUrlInput(e.target.value)}
+ placeholder="https://your-project.supabase.co/functions/v1/send-otp-email"
+ className={inputClass + " flex-1 text-[11px] font-mono"} />
+ <button onClick={saveUrl} className={`${btnPrimary} px-3 py-2 text-xs`}><Save size={12} /></button>
+ </div>
+ <div className="flex items-center gap-3">
+ <button onClick={testUrl} disabled={testing || !otpUrl} className={`${btnSecondary} px-3 py-1.5 text-[10px] flex items-center gap-1.5 disabled:opacity-40`}>
+ {testing ? <Loader2 size={10} className="animate-spin" /> : <Activity size={10} />} Ping
+ </button>
+ {testResult && (
+ <span className={`text-[10px] font-mono ${testResult.alive ? "text-emerald-400" : "text-red-400"}`}>
+ {testResult.alive ? "âœ…" : "âŒ"} {testResult.latency}ms
+ </span>
+ )}
+ {otpUrl && (
+ <span className="text-[10px] text-emerald-400/60 font-mono truncate max-w-[200px]">{otpUrl}</span>
+ )}
+ </div>
+ </div>
+
+ {/* Password Reset Logs */}
+ <div className={`${glassCard} p-4 space-y-3`}>
+ <div className="flex items-center justify-between">
+ <h3 className="text-sm font-semibold text-zinc-300 flex items-center gap-2">
+ <KeyRound size={14} className="text-amber-400" /> Password Reset Logs
+ </h3>
+ <div className="flex items-center gap-2">
+ <span className="text-[10px] text-zinc-500">{resetLogs.length} users</span>
+ {resetLogs.length > 0 && (
+ <button onClick={clearLogs} className={`${btnSecondary} px-2 py-1 text-[9px] flex items-center gap-1`}>
+ <Trash2 size={9} /> Clear All
+ </button>
+ )}
+ </div>
+ </div>
+
+ {loadingLogs ? (
+ <div className="text-center py-4"><Loader2 size={16} className="animate-spin text-zinc-500 mx-auto" /></div>
+ ) : resetLogs.length === 0 ? (
+ <p className="text-[11px] text-zinc-600 text-center py-4">No password reset logs yet</p>
+ ) : (
+ <div className="space-y-1.5 max-h-[400px] overflow-y-auto">
+ {resetLogs.map((log: any) => (
+ <div key={log.id} className="bg-white/3 border border-white/5 rounded-lg px-3 py-2 flex items-center justify-between">
+ <div className="flex-1 min-w-0">
+ <p className="text-[11px] text-white font-medium truncate">{log.email}</p>
+ <p className="text-[9px] text-zinc-500">{log.name || "â€”"}</p>
+ </div>
+ <div className="text-right flex-shrink-0 ml-2">
+ <p className="text-[9px] text-zinc-400">{log.timestamp ? new Date(log.timestamp).toLocaleString("bn-BD") : "â€”"}</p>
+ <p className="text-[9px] text-emerald-400/60">{log.method || "supabase-otp"}</p>
+ </div>
+ </div>
+ ))}
+ </div>
+ )}
+ </div>
+ </div>
+ );
+};
+
+// ==================== CLOUDFLARE WORKER ROUTER SECTION ====================
+// ==================== FUNCTION URL OVERRIDES â€” admin paste OR Lovable-deployed default ====================
+// Every library function is ALSO deployed on Lovable Cloud (this project). The
+// "Default" button pastes the Lovable-hosted URL so admin can fall back when
+// self-hosted credits run out, and switch back to their own URL anytime.
+const LOVABLE_DEFAULT_BASE = SUPABASE_URL ? `${String(SUPABASE_URL).replace(/\/+$/, "")}/functions/v1` : "";
+const ROUTER_FUNCTIONS: Array<{ slug: string; label: string; isNew?: boolean; badgeText?: string; badgeTone?: "emerald" | "cyan" | "amber"; defaultUrl: string }> = [
+ // `video-proxy` is intentionally NOT routable anymore â€” every video server
+ // carries its own proxy URL (Admin â†’ Video Servers). No global player proxy.
+ ...EDGE_FUNCTION_LIBRARY.filter((e) => e.slug !== "video-proxy").map(
+  (e) => ({ slug: e.slug, label: e.label, isNew: e.isNew, badgeText: e.badgeText, badgeTone: e.badgeTone, defaultUrl: LOVABLE_DEFAULT_BASE ? `${LOVABLE_DEFAULT_BASE}/${e.slug}` : "" })
+ ),
+ {
+  slug: "lovable-backdrop",
+  label: "Backdrop AI (Lovable)",
+  isNew: true,
+  badgeText: "BACKDROP AI",
+  badgeTone: "cyan" as const,
+  defaultUrl: LOVABLE_DEFAULT_BASE ? `${LOVABLE_DEFAULT_BASE}/lovable-backdrop` : "",
+ },
+];
+
+
+const FunctionUrlOverrides = ({ glassCard, inputClass, btnPrimary, btnSecondary }: { glassCard: string; inputClass: string; btnPrimary: string; btnSecondary: string }) => {
+ const [urls, setUrls] = useState<Record<string, string>>({});
+  const [enabled, setEnabled] = useState<Record<string, boolean>>({});
+ const [saving, setSaving] = useState<string | null>(null);
+ const [testing, setTesting] = useState<string | null>(null);
+ const [testResult, setTestResult] = useState<Record<string, { ok: boolean; ms: number }>>({});
+
+ useEffect(() => {
+ const unsub = onValue(ref(db, "settings/functionOverrides"), (snap) => {
+ const v = snap.val() || {};
+ const u: Record<string, string> = {};
+ const e: Record<string, boolean> = {};
+  ROUTER_FUNCTIONS.forEach(({ slug }) => {
+  u[slug] = normalizeFunctionEndpointUrl(slug, String(v?.[slug]?.customUrl || v?.[slug]?.url || ""));
+  e[slug] = Boolean(u[slug]) && v?.[slug]?.enabled !== false;
+ });
+ setUrls(u);
+ setEnabled(e);
+ });
+ return () => unsub();
+ }, []);
+
+  const save = async (slug: string) => {
+   setSaving(slug);
+   try {
+    const url = normalizeFunctionEndpointUrl(slug, (urls[slug] || "").trim());
+    if (url && !/^https?:\/\//i.test(url)) { toast.error("Paste a valid http/https function URL"); return; }
+     const active = Boolean(url) && enabled[slug] === true;
+   await set(ref(db, `settings/functionOverrides/${slug}`), {
+    enabled: active,
+   customUrl: url,
+    updatedAt: Date.now(),
+    source: "egd-router",
+   });
+   if (slug === "video-proxy") {
+    await remove(ref(db, "egdManager/config/playerProxyUrl"));
+   }
+    toast.success(active ? `Activated Â· ${slug}` : `Disabled Â· ${slug}`);
+   } catch (e: any) { toast.error(e?.message || "Save failed"); }
+   finally { setSaving(null); }
+  };
+
+ const clearLocal = (slug: string) => {
+ setUrls((p) => ({ ...p, [slug]: "" }));
+ setEnabled((p) => ({ ...p, [slug]: false }));
+ };
+
+  const ping = async (slug: string) => {
+   const u = normalizeFunctionEndpointUrl(slug, (urls[slug] || "").trim());
+   if (!u) { toast.error("Paste and save a deployed URL first"); return; }
+   setTesting(slug);
+   const start = Date.now();
+   // A deployed function can answer very differently depending on how it was
+   // written: some only implement POST, some reject GET, some hide behind a
+   // CORS policy. So we probe in order and accept the FIRST sign of life.
+   const attempt = async (init: RequestInit): Promise<boolean | null> => {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 8000);
+    try {
+     const r = await fetch(u, { ...init, signal: ctrl.signal });
+     // opaque (no-cors) responses have status 0 but prove the host answered
+     if (r.type === "opaque") return true;
+     return r.status < 500;
+    } catch { return null; }
+    finally { clearTimeout(t); }
+   };
+   let ok: boolean | null = null;
+   ok = await attempt({ method: "OPTIONS" });
+   if (ok === null) ok = await attempt({ method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "ping" }) });
+   if (ok === null) ok = await attempt({ method: "GET" });
+   if (ok === null) ok = await attempt({ method: "GET", mode: "no-cors" });
+   setTestResult((p) => ({ ...p, [slug]: { ok: ok === true, ms: Date.now() - start } }));
+   setTesting(null);
+  };
+
+
+
+ return (
+ <div className={`${glassCard} p-4 mb-4`}>
+ <div className="flex items-center justify-between gap-2 flex-wrap mb-3">
+ <div className="min-w-0">
+ <h3 className="text-sm font-semibold flex items-center gap-2">
+  <Link size={14} className="text-emerald-400" /> EGD Router â€” Deployed URLs
+ </h3>
+ <p className="text-[10px] text-zinc-400 mt-1 break-words">
+  Paste your self-deployed URL, or hit <b>Default</b> to fall back to the Lovable-hosted copy. Empty or disabled rows are ignored.
+ </p>
+ </div>
+ </div>
+
+ <div className="space-y-2">
+  {ROUTER_FUNCTIONS.map(({ slug, label, isNew, badgeText, badgeTone, defaultUrl }) => {
+ const res = testResult[slug];
+ const isVideoProxy = slug === "video-proxy";
+  const isDefault = normalizeFunctionEndpointUrl(slug, (urls[slug] || "").trim()) === defaultUrl;
+ const badgeClass = badgeTone === "cyan" ? "bg-cyan-500/20 text-cyan-300 border-cyan-500/40"
+   : badgeTone === "amber" ? "bg-amber-500/20 text-amber-300 border-amber-500/40"
+   : "bg-emerald-500/20 text-emerald-300 border-emerald-500/40";
+ return (
+ <div key={slug} className="rounded-xl border bg-zinc-900/40 p-3 min-w-0 border-zinc-700/50">
+ <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
+ <div className="min-w-0 flex items-center gap-2">
+ <div className="min-w-0">
+ <div className="text-xs font-semibold text-white truncate flex items-center gap-1.5">
+ {label}
+  {(badgeText || isNew) && (
+  <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded border tracking-wider ${badgeClass}`}>
+  {badgeText || "NEW"}
+  </span>
+  )}
+ {isVideoProxy && (
+ <span className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 tracking-wider">
+ PLAYER PROXY
+ </span>
+ )}
+ </div>
+ <div className="text-[10px] text-zinc-500 truncate">{slug}</div>
+ </div>
+ </div>
+ <button
+  onClick={() => setEnabled((p) => ({ ...p, [slug]: !(p[slug] === true) }))}
+  className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors shrink-0 ${enabled[slug] === true ? 'bg-emerald-600' : 'bg-zinc-600'}`}
+  title={enabled[slug] === true ? "Enabled" : "Disabled"}
+ >
+  <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${enabled[slug] === true ? 'translate-x-4.5' : 'translate-x-0.5'}`} />
+ </button>
+ </div>
+ <input
+ value={urls[slug] || ""}
+  onChange={(e) => {
+  const value = e.target.value;
+  setUrls((p) => ({ ...p, [slug]: value }));
+  setEnabled((p) => ({ ...p, [slug]: Boolean(value.trim()) }));
+  }}
+  placeholder={`Paste deployed ${slug} URL here`}
+ className={inputClass + " w-full text-[11px]"}
+ />
+ <div className="flex flex-wrap gap-1.5 mt-2">
+  <button onClick={() => clearLocal(slug)} className={`${btnSecondary} !px-2 !py-1 !text-[10px]`}>
+  Clear
+ </button>
+ <button
+   onClick={() => {
+      if (!defaultUrl) { toast.error("Default URL unavailable"); return; }
+      setUrls((p) => ({ ...p, [slug]: normalizeFunctionEndpointUrl(slug, defaultUrl) }));
+     setEnabled((p) => ({ ...p, [slug]: true }));
+     toast.success("Default URL pasted â€” hit Save to activate");
+   }}
+   className={`${btnSecondary} !px-2 !py-1 !text-[10px] inline-flex items-center gap-1 ${isDefault ? '!border-cyan-500/50 !text-cyan-300' : ''}`}
+   title="Use the Lovable-deployed copy of this function"
+ >
+   â­ Default{isDefault ? " âœ“" : ""}
+ </button>
+ <button onClick={() => save(slug)} disabled={saving === slug} className={`${btnPrimary} !px-2 !py-1 !text-[10px] inline-flex items-center gap-1`}>
+ {saving === slug ? <Loader2 className="animate-spin" size={10} /> : <Save size={10} />} Save
+ </button>
+ <button onClick={() => ping(slug)} disabled={testing === slug} className={`${btnSecondary} !px-2 !py-1 !text-[10px] inline-flex items-center gap-1`}>
+ {testing === slug ? <Loader2 className="animate-spin" size={10} /> : <span>ğŸ“¡</span>} Ping
+ </button>
+ {res && (
+ <span className={`text-[10px] px-1.5 py-1 rounded ${res.ok ? "bg-emerald-500/15 text-emerald-300" : "bg-red-500/15 text-red-300"}`}>
+ {res.ok ? "âœ“" : "âœ•"} {res.ms}ms
+ </span>
+ )}
+ </div>
+ </div>
+ );
+ })}
+ </div>
+ </div>
+ );
+};
+
+const EdgeRouterSection = ({ glassCard, inputClass, btnPrimary, btnSecondary }: { glassCard: string; inputClass: string; btnPrimary: string; btnSecondary: string }) => (
+ <FunctionUrlOverrides glassCard={glassCard} inputClass={inputClass} btnPrimary={btnPrimary} btnSecondary={btnSecondary} />
+);
+
+// ==================== AD GATE COOLDOWN CONFIG ====================
+const AdGateCooldownConfig = ({ glassCard, inputClass, btnPrimary }: { glassCard: string; inputClass: string; btnPrimary: string }) => {
+ const [minutes, setMinutes] = useState<number>(0);
+ const [saving, setSaving] = useState(false);
+ useEffect(() => {
+ const r = ref(db, "settings/adGateCooldownMinutes");
+ const unsub = onValue(r, (snap) => {
+ const v = Number(snap.val());
+ setMinutes(Number.isFinite(v) && v >= 0 ? v : 0);
+ });
+ return () => unsub();
+ }, []);
+ const save = async () => {
+ setSaving(true);
+ try {
+ await set(ref(db, "settings/adGateCooldownMinutes"), Math.max(0, Number(minutes) || 0));
+ toast.success("Ad gate cooldown saved");
+ } catch (e: any) { toast.error(e?.message || "Save failed"); }
+ finally { setSaving(false); }
+ };
+ return (
+ <div className={`${glassCard} p-4 mb-4`}>
+ <h3 className="text-sm font-semibold mb-2 flex items-center gap-2">
+ <Clock size={14} className="text-amber-400" /> Ad Gate Cooldown
+ </h3>
+ <p className="text-[11px] text-zinc-400 mb-3">
+ Minimum gap (in minutes) between two ad gates for the same user. Set to <b>0</b> to show the ad gate every time the user starts a video.
+ </p>
+ <div className="flex gap-2 items-end">
+ <div className="flex-1">
+ <label className="text-[10px] text-zinc-400 mb-1 block">Cooldown (minutes)</label>
+ <input type="number" min={0} max={1440} value={minutes}
+ onChange={e => setMinutes(Math.max(0, Number(e.target.value) || 0))}
+ className={inputClass} />
+ </div>
+ <button onClick={save} disabled={saving} className={`${btnPrimary} px-4 py-2 text-xs flex items-center justify-center gap-2`}>
+ <Save size={12} /> {saving ? "..." : "Save"}
+ </button>
+ </div>
+ </div>
+ );
+};
+
+// ==================== TELEGRAM POST FREE-ACCESS CONFIG ====================
+const TelegramFreeAccessConfig = ({ glassCard, inputClass, btnPrimary, btnSecondary }: { glassCard: string; inputClass: string; btnPrimary: string; btnSecondary: string }) => {
+ const [enabled, setEnabled] = useState(false);
+ const [hours, setHours] = useState<number>(24);
+ const [label, setLabel] = useState<string>("ğŸ”“ Free Access (24h)");
+ const [saving, setSaving] = useState(false);
+
+ useEffect(() => {
+ const r = ref(db, "settings/telegramFreeAccess");
+ const unsub = onValue(r, (snap) => {
+ const v = snap.val() || {};
+ setEnabled(v.enabled === true);
+ setHours(Number(v.hours) > 0 ? Number(v.hours) : 24);
+ setLabel(String(v.label || "ğŸ”“ Free Access (24h)"));
+ });
+ return () => unsub();
+ }, []);
+
+ const save = async () => {
+ setSaving(true);
+ try {
+ await set(ref(db, "settings/telegramFreeAccess"), { enabled, hours, label });
+ toast.success("Saved");
+ } catch (e: any) { toast.error(e?.message || "Save failed"); }
+ finally { setSaving(false); }
+ };
+
+ return (
+ <div className={`${glassCard} p-4 mb-4`}>
+ <h3 className="text-sm font-semibold mb-2 flex items-center gap-2">
+ <Send size={14} className="text-cyan-400" /> Telegram Post â€” Free Access Button
+ </h3>
+ <p className="text-[11px] text-zinc-400 mb-3">
+ Auto-attach a "Free Access" button to <b>every</b> Telegram post. Users tap it â†’ bot DM â†’ finish shortener â†’ get access token (paste-able in player).
+ </p>
+ <div className="space-y-2.5">
+ <div className="flex items-center justify-between bg-zinc-800/40 rounded-lg p-2.5">
+ <span className="text-xs text-white">Enabled on every post</span>
+ <button onClick={() => setEnabled(v => !v)}
+ className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${enabled ? 'bg-green-600' : 'bg-zinc-600'}`}>
+ <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${enabled ? 'translate-x-4.5' : 'translate-x-0.5'}`} />
+ </button>
+ </div>
+ <div>
+ <label className="text-[10px] text-zinc-400 mb-1 block">Access duration (hours)</label>
+ <input type="number" min={1} max={720} value={hours}
+ onChange={e => setHours(Math.max(1, Number(e.target.value) || 24))}
+ className={inputClass} />
+ </div>
+ <div>
+ <label className="text-[10px] text-zinc-400 mb-1 block">Button label (shown under each TG post)</label>
+ <input type="text" value={label} onChange={e => setLabel(e.target.value)} className={inputClass} placeholder="ğŸ”“ Free Access (24h)" />
+ </div>
+ <button onClick={save} disabled={saving} className={`${btnPrimary} w-full py-2 text-xs flex items-center justify-center gap-2`}>
+ <Save size={12} /> {saving ? "Saving..." : "Save"}
+ </button>
+ </div>
+ </div>
+ );
+};
+
+// ==================== TELEGRAM POST â€” GLOBAL PERMANENT CUSTOM BUTTON ====================
+const TelegramGlobalButtonConfig = ({ glassCard, inputClass, btnPrimary }: { glassCard: string; inputClass: string; btnPrimary: string; btnSecondary: string }) => {
+ const [enabled, setEnabled] = useState(false);
+ const [text, setText] = useState("");
+ const [url, setUrl] = useState("");
+ const [saving, setSaving] = useState(false);
+
+ useEffect(() => {
+ const r = ref(db, "settings/telegramGlobalButton");
+ const unsub = onValue(r, (snap) => {
+ const v = snap.val() || {};
+ setEnabled(v.enabled === true);
+ setText(String(v.text || ""));
+ setUrl(String(v.url || ""));
+ });
+ return () => unsub();
+ }, []);
+
+ const save = async () => {
+ setSaving(true);
+ try {
+ await set(ref(db, "settings/telegramGlobalButton"), { enabled, text: text.trim(), url: url.trim() });
+ toast.success("Global button saved");
+ } catch (e: any) { toast.error(e?.message || "Save failed"); }
+ finally { setSaving(false); }
+ };
+
+ return (
+ <div className={`${glassCard} p-4 mb-4`}>
+ <h3 className="text-sm font-semibold mb-2 flex items-center gap-2">
+ <Send size={14} className="text-pink-400" /> Telegram Post â€” Global Permanent Button
+ </h3>
+ <p className="text-[11px] text-zinc-400 mb-3">
+ This button will be attached to <b>every</b> Telegram post automatically. Turn it off anytime to stop sending.
+ </p>
+ <div className="space-y-2.5">
+ <div className="flex items-center justify-between bg-zinc-800/40 rounded-lg p-2.5">
+ <span className="text-xs text-white">Enabled on every post</span>
+ <button onClick={() => setEnabled(v => !v)}
+ className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${enabled ? 'bg-green-600' : 'bg-zinc-600'}`}>
+ <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${enabled ? 'translate-x-4.5' : 'translate-x-0.5'}`} />
+ </button>
+ </div>
+ <div>
+ <label className="text-[10px] text-zinc-400 mb-1 block">Button label</label>
+ <input type="text" value={text} onChange={e => setText(e.target.value)} className={inputClass} placeholder="ğŸŒ Visit Website" />
+ </div>
+ <div>
+ <label className="text-[10px] text-zinc-400 mb-1 block">Button URL</label>
+ <input type="text" value={url} onChange={e => setUrl(e.target.value)} className={inputClass} placeholder="https://rsanime03.lovable.app" />
+ </div>
+ <button onClick={save} disabled={saving} className={`${btnPrimary} w-full py-2 text-xs flex items-center justify-center gap-2`}>
+ <Save size={12} /> {saving ? "Saving..." : "Save Global Button"}
+ </button>
+ </div>
+ </div>
+ );
+};
+
+// ==================== AD SERVICES SECTION ====================
+const AdServicesSection = ({ glassCard, inputClass, btnPrimary, btnSecondary }: { glassCard: string; inputClass: string; btnPrimary: string; btnSecondary: string }) => {
+ const [services, setServices] = useState<Record<string, any>>({});
+ const [newName, setNewName] = useState("");
+ const [newShortenerUrl, setNewShortenerUrl] = useState("");
+ const [newBotUrl, setNewBotUrl] = useState("");
+ const [newIcon, setNewIcon] = useState("ğŸ”“");
+ const [newColor, setNewColor] = useState("linear-gradient(135deg, #6366f1, #8b5cf6)");
+ const [newMode, setNewMode] = useState<"shortener" | "miniapp">("shortener");
+ const [testing, setTesting] = useState<string | null>(null);
+ const [testResults, setTestResults] = useState<Record<string, { alive: boolean; latency: number } | null>>({});
+ const [gateEnabled, setGateEnabled] = useState<boolean>(true);
+
+ useEffect(() => {
+ const unsub = onValue(ref(db, "settings/adServices"), (snap) => {
+ setServices(snap.val() || {});
+ });
+ const unsubGate = onValue(ref(db, "settings/unlockGateEnabled"), (snap) => {
+ setGateEnabled(snap.val() !== false);
+ });
+ return () => { unsub(); unsubGate(); };
+ }, []);
+
+ const toggleGate = async () => {
+ await set(ref(db, "settings/unlockGateEnabled"), !gateEnabled);
+ toast.success(!gateEnabled ? "âœ… Unlock gate enabled" : "ğŸš« Unlock gate disabled â€” all videos play free");
+ };
+
+ const pickPrimaryUrl = (mode: "shortener" | "miniapp", shortenerUrl?: string, botUrl?: string) => {
+ return mode === "miniapp" ? (botUrl || "telegram://verify-bot") : (shortenerUrl || "");
+ };
+
+ const addService = async () => {
+ const name = newName.trim();
+ const shortenerUrl = newShortenerUrl.trim();
+ const botUrl = newBotUrl.trim();
+ if (!name) { toast.error("Service name required"); return; }
+ if (newMode === "shortener" && !shortenerUrl) { toast.error("Shortener Edge Function URL required"); return; }
+ if (newMode === "miniapp" && !botUrl) { toast.error("Telegram Bot Edge Function URL required"); return; }
+
+ const id = `ad_${Date.now()}`;
+ const primary = pickPrimaryUrl(newMode, shortenerUrl, botUrl);
+ await set(ref(db, `settings/adServices/${id}`), {
+ id, name,
+ functionUrl: primary, // legacy compat
+ shortenerFunctionUrl: shortenerUrl || null,
+ telegramBotFunctionUrl: botUrl || null,
+ enabled: true,
+ icon: newIcon || "ğŸ”“",
+ color: newColor || "",
+ mode: newMode,
+ });
+ setNewName(""); setNewShortenerUrl(""); setNewBotUrl("");
+ setNewIcon("ğŸ”“"); setNewMode("shortener");
+ toast.success(`âœ… "${name}" added!`);
+ };
+
+ const updateField = async (id: string, key: string, value: any) => {
+ const svc = services[id] || {};
+ const nextValue = value || null;
+ const nextShortenerUrl = key === "shortenerFunctionUrl" ? (nextValue || "") : (svc.shortenerFunctionUrl || "");
+ const nextBotUrl = key === "telegramBotFunctionUrl" ? (nextValue || "") : (svc.telegramBotFunctionUrl || "");
+ const nextMode = (svc.mode || "shortener") as "shortener" | "miniapp";
+ await update(ref(db, `settings/adServices/${id}`), {
+ [key]: nextValue,
+ functionUrl: pickPrimaryUrl(nextMode, nextShortenerUrl, nextBotUrl),
+ updatedAt: Date.now(),
+ });
+ toast.success("Saved");
+ };
+
+ const setServiceMode = async (id: string, mode: "shortener" | "miniapp") => {
+ const svc = services[id] || {};
+ await update(ref(db, `settings/adServices/${id}`), {
+ mode,
+ functionUrl: pickPrimaryUrl(mode, svc.shortenerFunctionUrl || "", svc.telegramBotFunctionUrl || ""),
+ updatedAt: Date.now(),
+ });
+ toast.success(mode === "miniapp" ? "Telegram Bot mode" : "Shortener mode");
+ };
+
+ const toggleService = async (id: string) => {
+ const svc = services[id];
+ if (!svc) return;
+ await set(ref(db, `settings/adServices/${id}/enabled`), !svc.enabled);
+ };
+
+ const deleteService = async (id: string) => {
+ await remove(ref(db, `settings/adServices/${id}`));
+ toast.success("ğŸ—‘ï¸ Deleted");
+ };
+
+ const testService = async (id: string, url: string) => {
+ if (!url) { toast.error("No URL set"); return; }
+ setTesting(id);
+ const start = Date.now();
+ try {
+ const controller = new AbortController();
+ const t = setTimeout(() => controller.abort(), 8000);
+ const res = await fetch(url, {
+ method: "POST",
+ headers: { "Content-Type": "application/json" },
+ body: JSON.stringify({ url: "https://google.com" }),
+ signal: controller.signal,
+ });
+ clearTimeout(t);
+ const data = await res.json().catch(() => ({}));
+ const alive = res.ok || !!data?.shortenedUrl || !!data?.success || !!data?.ok;
+ setTestResults(prev => ({ ...prev, [id]: { alive, latency: Date.now() - start } }));
+ } catch {
+ setTestResults(prev => ({ ...prev, [id]: { alive: false, latency: Date.now() - start } }));
+ }
+ setTesting(null);
+ };
+
+ const serviceList = Object.values(services);
+
+ return (
+ <div className={`${glassCard} p-4 mb-4`}>
+ <h3 className="text-sm font-semibold mb-2 flex items-center gap-2">
+ <Link size={14} className="text-amber-400" /> ğŸ“¢ Ad Link Services (Unlock Buttons)
+ </h3>
+ <p className="text-[10px] text-zinc-400 mb-4">
+ Manage the ad-link unlock buttons users click to unlock videos. Each service has a Shortener URL and a Telegram Bot URL â€” pick which one is active per service.
+ </p>
+
+ <div className={`mb-4 rounded-xl p-3 border ${gateEnabled ? "bg-green-500/10 border-green-500/30" : "bg-zinc-800/40 border-zinc-700/40"}`}>
+ <div className="flex items-center justify-between">
+ <div>
+ <p className="text-xs font-bold text-white">ğŸŒ Unlock Gate (Global)</p>
+ <p className="text-[10px] text-zinc-400 mt-0.5">
+ {gateEnabled
+ ? "ON â€” users must verify via the unlock page"
+ : "OFF â€” all videos play free, no flash/redirect"}
+ </p>
+ </div>
+ <button onClick={toggleGate}
+ className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${gateEnabled ? 'bg-green-600' : 'bg-zinc-600'}`}>
+ <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${gateEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
+ </button>
+ </div>
+ </div>
+
+ <div className="space-y-3 mb-4">
+ {serviceList.length === 0 && (
+ <p className="text-[10px] text-zinc-500 text-center py-3">No services yet. Add one below.</p>
+ )}
+ {serviceList.map((svc: any) => {
+ const tr = testResults[svc.id];
+ const activeMode = svc.mode || "shortener";
+ const activeUrl = activeMode === "miniapp"
+ ? (svc.telegramBotFunctionUrl || svc.functionUrl)
+ : (svc.shortenerFunctionUrl || svc.functionUrl);
+ return (
+ <div key={svc.id} className={`bg-zinc-800/40 rounded-xl p-3 border ${svc.enabled ? "border-green-500/30" : "border-zinc-700/40 opacity-60"}`}>
+ <div className="flex items-center justify-between mb-2">
+ <div className="flex items-center gap-2">
+ <span className="text-base">{svc.icon || "ğŸ”“"}</span>
+ <span className="text-xs font-semibold text-white">{svc.name}</span>
+ {tr && (
+ <span className={`text-[9px] font-mono ${tr.alive ? "text-green-400" : "text-red-400"}`}>
+ {tr.alive ? `âœ“ ${tr.latency}ms` : "âœ• Down"}
+ </span>
+ )}
+ </div>
+ <div className="flex items-center gap-1.5">
+ <button onClick={() => testService(svc.id, activeUrl)} disabled={testing === svc.id}
+ className={`${btnSecondary} !px-2 !py-1 !text-[10px]`}>
+ {testing === svc.id ? <RefreshCw size={10} className="animate-spin" /> : <Activity size={10} />}
+ </button>
+ <button onClick={() => toggleService(svc.id)}
+ className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${svc.enabled ? 'bg-green-600' : 'bg-zinc-600'}`}>
+ <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${svc.enabled ? 'translate-x-4.5' : 'translate-x-0.5'}`} />
+ </button>
+ <button onClick={() => deleteService(svc.id)} className={`${btnSecondary} !px-2 !py-1 !text-[10px] text-red-400`}>
+ <Trash2 size={10} />
+ </button>
+ </div>
+ </div>
+
+ {/* Mode selector */}
+ <div className="flex items-center gap-2 bg-zinc-900/50 rounded-lg p-2 mb-2">
+ <span className="text-[10px] text-zinc-400">Active mode:</span>
+ <button
+ onClick={() => setServiceMode(svc.id, "shortener")}
+ className={`px-2 py-0.5 rounded text-[10px] font-semibold ${activeMode === "shortener" ? "bg-amber-500 text-black" : "bg-zinc-700 text-zinc-300"}`}>
+ ğŸ”— Shortener
+ </button>
+ <button
+ onClick={() => setServiceMode(svc.id, "miniapp")}
+ className={`px-2 py-0.5 rounded text-[10px] font-semibold ${activeMode === "miniapp" ? "bg-cyan-500 text-black" : "bg-zinc-700 text-zinc-300"}`}>
+ ğŸ¤– Telegram Bot
+ </button>
+ </div>
+
+ {/* Dual URL fields */}
+ <div className="space-y-1.5">
+ <div>
+ <label className="text-[9px] text-amber-300">ğŸ”— Shortener Edge Function URL</label>
+ <input
+ defaultValue={svc.shortenerFunctionUrl || (activeMode === "shortener" ? svc.functionUrl : "") || ""}
+ onBlur={(e) => updateField(svc.id, "shortenerFunctionUrl", e.target.value.trim())}
+ placeholder="https://xxx.supabase.co/functions/v1/shorten-arolinks"
+ className={`${inputClass} !text-[10px]`} />
+ </div>
+ <div>
+ <label className="text-[9px] text-cyan-300">ğŸ¤– Telegram Bot Edge Function URL</label>
+ <input
+ defaultValue={svc.telegramBotFunctionUrl || (activeMode === "miniapp" ? svc.functionUrl : "") || ""}
+ onBlur={(e) => updateField(svc.id, "telegramBotFunctionUrl", e.target.value.trim())}
+ placeholder="https://xxx.supabase.co/functions/v1/link-share-bot"
+ className={`${inputClass} !text-[10px]`} />
+ </div>
+ </div>
+ </div>
+ );
+ })}
+ </div>
+
+ {/* Add New Service */}
+ <div className="bg-zinc-800/30 rounded-xl p-3 border border-dashed border-zinc-600/50">
+ <h4 className="text-[11px] font-semibold text-white mb-2 flex items-center gap-1.5">
+ <PlusCircle size={12} className="text-green-400" /> Add New Service
+ </h4>
+ <div className="space-y-2">
+ <div className="flex items-center gap-2 bg-zinc-900/50 rounded-lg p-2">
+ <span className="text-[10px] text-zinc-400">Default mode:</span>
+ <button type="button" onClick={() => setNewMode("shortener")}
+ className={`px-2 py-0.5 rounded text-[10px] font-semibold ${newMode === "shortener" ? "bg-amber-500 text-black" : "bg-zinc-700 text-zinc-300"}`}>
+ ğŸ”— Shortener
+ </button>
+ <button type="button" onClick={() => setNewMode("miniapp")}
+ className={`px-2 py-0.5 rounded text-[10px] font-semibold ${newMode === "miniapp" ? "bg-cyan-500 text-black" : "bg-zinc-700 text-zinc-300"}`}>
+ ğŸ¤– Telegram Bot
+ </button>
+ </div>
+ <div className="flex gap-2">
+ <input value={newIcon} onChange={(e) => setNewIcon(e.target.value)} placeholder="ğŸ”“" className={`${inputClass} !w-12 !text-center`} />
+ <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Service name (e.g. AroLinks)" className={`${inputClass} flex-1`} />
+ </div>
+ <div>
+ <label className="text-[9px] text-amber-300">ğŸ”— Shortener Edge Function URL</label>
+ <input value={newShortenerUrl} onChange={(e) => setNewShortenerUrl(e.target.value)}
+ placeholder="https://xxx.supabase.co/functions/v1/shorten-arolinks" className={inputClass} />
+ </div>
+ <div>
+ <label className="text-[9px] text-cyan-300">ğŸ¤– Telegram Bot Edge Function URL</label>
+ <input value={newBotUrl} onChange={(e) => setNewBotUrl(e.target.value)}
+ placeholder="https://xxx.supabase.co/functions/v1/link-share-bot" className={inputClass} />
+ </div>
+ <input value={newColor} onChange={(e) => setNewColor(e.target.value)}
+ placeholder="Button color CSS (e.g. linear-gradient(135deg, #f59e0b, #ef4444))" className={inputClass} />
+ <button onClick={addService} className={`${btnPrimary} w-full`}>
+ <PlusCircle size={12} /> Add Service
+ </button>
+ </div>
+ </div>
+ </div>
+ );
+};
+
+// ==================== AI CONFIG SECTION ====================
+const AiConfigSection = ({ glassCard, inputClass, btnPrimary }: { glassCard: string; inputClass: string; btnPrimary: string }) => {
+ const [aiEnabled, setAiEnabled] = useState(false);
+ const [aiUrl, setAiUrl] = useState("");
+ const [aiUrlInput, setAiUrlInput] = useState("");
+ const [testing, setTesting] = useState(false);
+ const [testResult, setTestResult] = useState<{ alive: boolean; latency: number } | null>(null);
+
+ useEffect(() => {
+ const unsub = onValue(ref(db, "settings/aiChat"), (snap) => {
+ const val = snap.val();
+ setAiEnabled(val?.enabled === true);
+ setAiUrl(val?.url || "");
+ setAiUrlInput(val?.url || "");
+ });
+ return () => unsub();
+ }, []);
+
+ const save = async () => {
+ await set(ref(db, "settings/aiChat"), { enabled: aiEnabled, url: aiUrlInput.trim() });
+ setAiUrl(aiUrlInput.trim());
+ toast.success("âœ… AI settings saved!");
+ };
+
+ const toggle = async () => {
+ const next = !aiEnabled;
+ setAiEnabled(next);
+ await set(ref(db, "settings/aiChat/enabled"), next);
+ toast.success(next ? "ğŸ¤– AI enabled" : "AI disabled");
+ };
+
+ const testAi = async () => {
+ const url = aiUrlInput.trim();
+ if (!url) { toast.error("Enter the AI URL first"); return; }
+ setTesting(true);
+ setTestResult(null);
+ const start = Date.now();
+ try {
+ const controller = new AbortController();
+ const t = setTimeout(() => controller.abort(), 10000);
+ const res = await fetch(url, {
+ method: "POST",
+ headers: { "Content-Type": "application/json" },
+ body: JSON.stringify({
+ messages: [{ role: "user", content: "ping" }],
+ animeContext: "",
+ userContext: "",
+ }),
+ signal: controller.signal,
+ });
+ clearTimeout(t);
+ const latency = Date.now() - start;
+ const data = await res.json().catch(() => ({}));
+ setTestResult({ alive: res.ok && !!data?.reply, latency });
+ } catch {
+ setTestResult({ alive: false, latency: Date.now() - start });
+ }
+ setTesting(false);
+ };
+
+ return (
+ <div>
+ <div className={`${glassCard} p-4 mb-4`}>
+ <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+ ğŸ¤– AI Chat Config
+ </h3>
+ <p className="text-[10px] text-zinc-400 mb-4">
+ Turning AI Chat off hides the AI button from users. Save a URL to enable it.
+ </p>
+
+ {/* On/Off Toggle */}
+ <div className="flex items-center justify-between mb-4 bg-zinc-800/40 rounded-xl p-3 border border-zinc-700/40">
+ <div className="flex items-center gap-3">
+ <div className={`w-3 h-3 rounded-full ${aiEnabled ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
+ <span className="text-xs font-medium">{aiEnabled ? 'AI is enabled' : 'AI is disabled'}</span>
+ </div>
+ <button onClick={toggle}
+ className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors ${aiEnabled ? 'bg-green-600' : 'bg-zinc-600'}`}>
+ <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${aiEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
+ </button>
+ </div>
+
+ {/* AI URL */}
+ <div className="mb-3">
+ <label className="text-[10px] text-zinc-400 block mb-1">AI Endpoint URL</label>
+ <input value={aiUrlInput} onChange={(e) => setAiUrlInput(e.target.value)}
+ placeholder="https://your-worker.workers.dev/ai-chat" className={inputClass} />
+ </div>
+
+ <div className="flex gap-2">
+ <button onClick={save} className={`${btnPrimary} !px-4 !py-2 flex-1`}>
+ <Save size={14} /> Save
+ </button>
+ <button onClick={testAi} disabled={testing || !aiUrlInput.trim()}
+ className={`${btnPrimary} !px-4 !py-2 bg-cyan-700 hover:bg-cyan-600`}>
+ {testing ? <RefreshCw size={14} className="animate-spin" /> : <Activity size={14} />} Test
+ </button>
+ </div>
+
+ {testResult && (
+ <div className={`mt-3 p-2.5 rounded-lg text-xs font-medium ${testResult.alive ? "bg-green-500/10 text-green-400" : "bg-red-500/10 text-red-400"}`}>
+ {testResult.alive ? `âœ… AI is responding (${testResult.latency}ms)` : `âŒ AI is not responding`}
+ </div>
+ )}
+ </div>
+ </div>
+ );
+};
+
+// ==================== BRANDING CONFIG SECTION ====================
+const BrandingSection = ({ glassCard, inputClass, btnPrimary }: { glassCard: string; inputClass: string; btnPrimary: string }) => {
+ const [config, setConfig] = useState<Record<string, string>>({});
+ const [saving, setSaving] = useState(false);
+
+ const FIELDS = [
+ { key: "siteName", label: "Site name", placeholder: "" },
+ { key: "siteDescription", label: "Site description", placeholder: "Your ultimate destination..." },
+ { key: "siteTagline", label: "Tagline", placeholder: "Premium Anime Streaming" },
+ { key: "loginTitle", label: "Login page title", placeholder: "" },
+ { key: "loginSubtitle", label: "Login subtitle", placeholder: "Premium Anime Streaming" },
+ { key: "premiumTitle", label: "Premium title", placeholder: "" },
+ { key: "footerText", label: "Footer text", placeholder: "Unlimited Anime Series & Movies" },
+ { key: "footerCopyright", label: "Copyright text", placeholder: "" },
+ { key: "splashText", label: "Splash screen text", placeholder: "" },
+ { key: "adminTitle", label: "Admin panel title", placeholder: "" },
+ { key: "aboutTitle", label: "About page title", placeholder: "" },
+ // playerName removed â€” player no longer renders a header title
+ { key: "rsCardLabel", label: "Card label", placeholder: "" },
+ { key: "anCardLabel", label: "AnimeSalt card label", placeholder: "AN" },
+ ];
+
+ const LOGO_FIELDS: { key: string; label: string; placeholder: string; preview: "square" | "wide" }[] = [
+ { key: "logoUrl", label: "Default Logo (header + splash)", placeholder: "https://... or upload", preview: "square" },
+ ];
+
+ const [uploadingKey, setUploadingKey] = useState<string | null>(null);
+
+ useEffect(() => {
+ const unsub = onValue(ref(db, "settings/branding"), (snap) => {
+ setConfig(snap.val() || {});
+ });
+ return () => unsub();
+ }, []);
+
+ const updateField = (key: string, value: string) => {
+ setConfig(prev => ({ ...prev, [key]: value }));
+ };
+
+ const handleUpload = async (key: string, file: File | null) => {
+ if (!file) return;
+ setUploadingKey(key);
+ try {
+ const { uploadToImgbb } = await import("@/lib/imgbbUpload");
+ const url = await uploadToImgbb(file);
+ // Update and persist immediately so the URL is saved even without clicking Save
+ setConfig(prev => {
+ const next = { ...prev, [key]: url };
+ update(ref(db, "settings/branding"), { [key]: url }).catch(() => {});
+ return next;
+ });
+ toast.success("âœ… Uploaded & saved");
+ } catch (e: any) {
+ toast.error(`Upload failed: ${e?.message || e}`);
+ }
+ setUploadingKey(null);
+ };
+
+ const saveAll = async () => {
+ setSaving(true);
+ try {
+ const cleaned: Record<string, string> = {};
+ Object.entries(config).forEach(([k, v]) => {
+ if (v && String(v).trim()) cleaned[k] = String(v).trim();
+ });
+ await set(ref(db, "settings/branding"), cleaned);
+ toast.success("âœ… Branding saved â€” applied everywhere.");
+ } catch {
+ toast.error("Save failed");
+ }
+ setSaving(false);
+ };
+
+ return (
+ <div>
+ <div className={`${glassCard} p-4 mb-4`}>
+ <h3 className="text-sm font-semibold mb-1 flex items-center gap-2">
+ <Edit size={14} className="text-purple-400" /> ğŸ·ï¸ UI + Branding
+ </h3>
+ <p className="text-[10px] text-zinc-400 mb-4">
+ All site names and logos are managed from here â€” no code edits needed.
+ </p>
+ </div>
+
+ {/* Logo / Image Settings */}
+ <div className={`${glassCard} p-4 mb-4`}>
+ <h4 className="text-xs font-bold text-white mb-3 flex items-center gap-2">ğŸ¨ Logo & Image Settings</h4>
+ <div className="space-y-4">
+ {LOGO_FIELDS.map(({ key, label, placeholder, preview }) => {
+ const val = config[key] || "";
+ const isUploading = uploadingKey === key;
+ return (
+ <div key={key} className="bg-zinc-900/40 border border-zinc-700/40 rounded-xl p-3">
+ <label className="text-[11px] text-zinc-300 font-medium block mb-2">{label}</label>
+ <div className="flex gap-2">
+ <input
+ value={val}
+ onChange={(e) => updateField(key, e.target.value)}
+ placeholder={placeholder}
+ className={`${inputClass} flex-1 min-w-0`}
+ />
+ <label className={`${btnPrimary} !px-3 !py-2 cursor-pointer flex items-center gap-1.5 shrink-0 ${isUploading ? 'opacity-60 pointer-events-none' : ''}`}>
+ {isUploading ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
+ <span className="text-[11px]">{isUploading ? "..." : "Upload"}</span>
+ <input
+ type="file"
+ accept="image/*"
+ className="hidden"
+ onChange={(e) => handleUpload(key, e.target.files?.[0] || null)}
+ />
+ </label>
+ </div>
+ {val && (
+ <div className="mt-2.5">
+ <img
+ src={val}
+ alt="preview"
+ className={preview === "wide"
+ ? "w-full max-h-32 object-cover rounded-lg bg-zinc-800 border border-zinc-700/40"
+ : "w-14 h-14 rounded-lg object-cover bg-zinc-800 border border-zinc-700/40"}
+ onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+ />
+ </div>
+ )}
+ </div>
+ );
+ })}
+ </div>
+ </div>
+
+
+ {/* Text Fields */}
+ <div className={`${glassCard} p-4 mb-4`}>
+ <h4 className="text-xs font-bold text-white mb-3 flex items-center gap-2">ğŸ“ Name settings</h4>
+ <div className="space-y-3">
+ {FIELDS.map(({ key, label, placeholder }) => (
+ <div key={key}>
+ <label className="text-[10px] text-zinc-400 block mb-1">{label}</label>
+ <input
+ value={config[key] || ""}
+ onChange={(e) => updateField(key, e.target.value)}
+ placeholder={placeholder}
+ className={inputClass}
+ />
+ </div>
+ ))}
+ </div>
+ </div>
+
+ {/* APK Download URLs */}
+ <div className={`${glassCard} p-4 mb-4`}>
+ <h4 className="text-xs font-bold text-white mb-3 flex items-center gap-2">ğŸ“¦ APK download links</h4>
+ <p className="text-[10px] text-zinc-400 mb-3">
+ The User APK link appears in the user panel. The Admin APK link appears only in this admin panel. Keep them as separate versions.
+ </p>
+ <div className="space-y-3">
+ <div>
+ <label className="text-[10px] text-zinc-400 block mb-1">User App APK URL (shown in the user panel)</label>
+ <input
+ value={config["userApkUrl"] || ""}
+ onChange={(e) => updateField("userApkUrl", e.target.value)}
+ placeholder="https://example.com/rsanime-user.apk"
+ className={inputClass}
+ />
+ {config["userApkUrl"] && (
+ <a
+ href={config["userApkUrl"]}
+ target="_blank"
+ rel="noopener noreferrer"
+ download
+ className="inline-flex items-center gap-2 mt-2 px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold"
+ >
+ <Download size={12} /> Download User APK
+ </a>
+ )}
+ </div>
+ <div>
+ <label className="text-[10px] text-zinc-400 block mb-1">Admin App APK URL (shown only in the admin panel)</label>
+ <input
+ value={config["adminApkUrl"] || ""}
+ onChange={(e) => updateField("adminApkUrl", e.target.value)}
+ placeholder="https://example.com/rsanime-admin.apk"
+ className={inputClass}
+ />
+ {config["adminApkUrl"] && (
+ <a
+ href={config["adminApkUrl"]}
+ target="_blank"
+ rel="noopener noreferrer"
+ download
+ className="inline-flex items-center gap-2 mt-2 px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold"
+ >
+ <Download size={12} /> Download Admin APK
+ </a>
+ )}
+ </div>
+ </div>
+ </div>
+
+ {/* Auto-Fill + Save Buttons */}
+ <div className="flex gap-2">
+ <button
+ onClick={async () => {
+ try {
+ const snap = await get(ref(db, "settings/branding"));
+ const val = snap.val() || {};
+ setConfig(val);
+ toast.success("âœ… Auto-fill complete. Current saved values have been loaded.");
+ } catch {
+ toast.error("Auto-fill failed");
+ }
+ }}
+ className="flex-1 py-3 rounded-xl text-sm font-bold bg-gradient-to-r from-cyan-500/20 to-blue-500/20 border border-cyan-500/40 text-cyan-300 hover:bg-cyan-500/30 transition-all flex items-center justify-center gap-2"
+ >
+ <RefreshCw size={14} /> Auto fill
+ </button>
+ <button onClick={saveAll} disabled={saving} className={`${btnPrimary} flex-1 !py-3 text-sm`}>
+ {saving ? <><RefreshCw size={14} className="animate-spin" /> Saving...</> : <><Save size={14} /> Save all</>}
+ </button>
+ </div>
+ </div>
+ );
+};
+const UIThemesSection = ({ glassCard, btnPrimary }: { glassCard: string; btnPrimary: string }) => {
+ const [activeThemeId, setActiveThemeId] = useState("default");
+
+ useEffect(() => {
+ const unsub = onValue(ref(db, "settings/activeTheme"), (snap) => {
+ setActiveThemeId(snap.val() || "default");
+ });
+ return () => unsub();
+ }, []);
+
+ const applyTheme = async (preset: ThemePreset) => {
+ try {
+ await set(ref(db, "settings/activeTheme"), preset.id);
+ toast.success(`${preset.emoji} ${preset.name} theme activated!`);
+ } catch {
+ toast.error("Theme save failed");
+ }
+ };
+
+ return (
+ <div>
+ <div className={`${glassCard} p-4 mb-4`}>
+ <h3 className="text-sm font-semibold mb-1 flex items-center gap-2">
+ <Zap size={14} className="text-yellow-400" /> UI Theme Presets
+ </h3>
+ <p className="text-[11px] text-zinc-400 mb-4">
+ Choose a theme preset. The UI updates for every user instantly.
+ </p>
+ <div className="grid grid-cols-2 gap-2.5">
+ {THEME_PRESETS.map((preset) => {
+ const isActive = activeThemeId === preset.id;
+ return (
+ <button
+ key={preset.id}
+ onClick={() => applyTheme(preset)}
+ className={`relative rounded-xl p-3 text-left transition-all duration-300 border-2 ${
+ isActive
+ ? "border-green-500 ring-2 ring-green-500/30 shadow-lg"
+ : "border-zinc-700/50 hover:border-zinc-500"
+ }`}
+ style={{ background: "rgba(30,30,50,0.6)" }}
+ >
+ {isActive && (
+ <div className="absolute top-1.5 right-1.5 w-5 h-5 bg-green-500 rounded-full flex items-center justify-center">
+ <Check size={11} className="text-white" />
+ </div>
+ )}
+ <div className="flex items-center gap-2 mb-2">
+ <span className="text-xl">{preset.emoji}</span>
+ <span className="text-xs font-bold text-white">{preset.name}</span>
+ </div>
+ <p className="text-[10px] text-zinc-400 mb-2">{preset.description}</p>
+ <div className="flex gap-1">
+ {Object.values(preset.colors).map((c, i) => (
+ <div
+ key={i}
+ className="w-5 h-5 rounded-full border border-zinc-600"
+ style={{ background: c }}
+ />
+ ))}
+ </div>
+ </button>
+ );
+ })}
+ </div>
+ </div>
+ </div>
+ );
+};
+
+
+// ==================== CUSTOM FONTS LIST ====================
+const CUSTOM_FONTS = [
+ { id: "default", name: "Default", family: "" },
+ { id: "serif", name: "Serif Classic", family: "'Georgia', serif" },
+ { id: "impact", name: "Impact Bold", family: "'Impact', 'Arial Black', sans-serif" },
+ { id: "cursive", name: "Cursive", family: "'Segoe Script', 'Comic Sans MS', cursive" },
+ { id: "monospace", name: "Monospace", family: "'Courier New', monospace" },
+ { id: "arabic", name: "Arabic Style", family: "'Amiri', 'Times New Roman', serif" },
+ { id: "bangla", name: "Bangla", family: "'Noto Sans Bengali', 'SolaimanLipi', sans-serif" },
+ { id: "fantasy", name: "Fantasy", family: "'Papyrus', fantasy" },
+ { id: "elegant", name: "Elegant", family: "'Playfair Display', 'Didot', serif" },
+ { id: "modern", name: "Modern Sans", family: "'Helvetica Neue', 'Arial', sans-serif" },
+ { id: "condensed", name: "Condensed", family: "'Arial Narrow', 'Roboto Condensed', sans-serif" },
+ { id: "handwriting", name: "Handwriting", family: "'Dancing Script', 'Brush Script MT', cursive" },
+];
+
+// ==================== HERO PINNED POSTS SECTION ====================
+const HeroPinnedPostsSection = ({
+ glassCard, inputClass, btnPrimary, btnSecondary,
+ webseriesData, moviesData, animesaltSelectedData,
+}: {
+ glassCard: string; inputClass: string; btnPrimary: string; btnSecondary: string;
+ webseriesData: any[]; moviesData: any[]; animesaltSelectedData: Record<string, any>;
+}) => {
+ const [pinnedPosts, setPinnedPosts] = useState<any[]>([]);
+ const [title, setTitle] = useState("");
+ const [description, setDescription] = useState("");
+ const [imageUrl, setImageUrl] = useState("");
+ const [imagePreview, setImagePreview] = useState("");
+ const [titleColor, setTitleColor] = useState("#ffffff");
+ const [titleFont, setTitleFont] = useState("");
+ const fileRef = useRef<HTMLInputElement>(null);
+
+ // Custom background image
+ const [bgImageUrl, setBgImageUrl] = useState("");
+ const [bgImagePreview, setBgImagePreview] = useState("");
+ const bgFileRef = useRef<HTMLInputElement>(null);
+
+ useEffect(() => {
+ const unsub = onValue(ref(db, "settings/pinnedHeroPosts"), (snap) => {
+ const data = snap.val();
+ if (data) {
+ const arr = Object.entries(data).map(([k, v]: any) => ({ _key: k, ...v }));
+ arr.sort((a: any, b: any) => (b.pinnedAt || 0) - (a.pinnedAt || 0));
+ setPinnedPosts(arr);
+ } else {
+ setPinnedPosts([]);
+ }
+ });
+ return () => unsub();
+ }, []);
+
+ useEffect(() => {
+ const unsub = onValue(ref(db, "settings/customBgImage"), (snap) => {
+ const val = snap.val() || "";
+ setBgImageUrl(val);
+ setBgImagePreview(val);
+ });
+ return () => unsub();
+ }, []);
+
+ const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+ const file = e.target.files?.[0];
+ if (!file) return;
+ const reader = new FileReader();
+ reader.onload = (ev) => {
+ const result = ev.target?.result as string;
+ setImagePreview(result);
+ setImageUrl(result);
+ };
+ reader.readAsDataURL(file);
+ };
+
+ const handleImageUrlChange = (url: string) => {
+ setImageUrl(url);
+ setImagePreview(url);
+ };
+
+ const handleBgFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+ const file = e.target.files?.[0];
+ if (!file) return;
+ const reader = new FileReader();
+ reader.onload = (ev) => {
+ const result = ev.target?.result as string;
+ setBgImagePreview(result);
+ setBgImageUrl(result);
+ };
+ reader.readAsDataURL(file);
+ };
+
+ const saveBgImage = async () => {
+ try {
+ await set(ref(db, "settings/customBgImage"), bgImageUrl.trim());
+ toast.success(bgImageUrl.trim() ? "âœ… Background image set!" : "Background image removed");
+ } catch {
+ toast.error("Save failed");
+ }
+ };
+
+ const addCustomPost = async () => {
+ if (!title.trim()) { toast.error("Enter a title"); return; }
+ if (!imageUrl.trim()) { toast.error("Add an image URL or upload an image"); return; }
+ try {
+ await push(ref(db, "settings/pinnedHeroPosts"), {
+ id: `custom_${Date.now()}`,
+ title: title.trim(),
+ backdrop: imageUrl.trim(),
+ description: description.trim(),
+ type: "custom",
+ isCustom: true,
+ rating: "",
+ year: "",
+ titleColor: titleColor || "#ffffff",
+ titleFont: titleFont || "",
+ pinnedAt: Date.now(),
+ });
+ toast.success(`ğŸ“Œ "${title}" posted to the hero slider!`);
+ setTitle("");
+ setDescription("");
+ setImageUrl("");
+ setImagePreview("");
+ setTitleColor("#ffffff");
+ setTitleFont("");
+ } catch {
+ toast.error("Post failed");
+ }
+ };
+
+ const unpinContent = async (key: string) => {
+ try {
+ await remove(ref(db, `settings/pinnedHeroPosts/${key}`));
+ toast.success("Post deleted!");
+ } catch {
+ toast.error("Delete failed");
+ }
+ };
+
+ return (
+ <div>
+ {/* Custom Background Image */}
+ <div className={`${glassCard} p-4 mb-4`}>
+ <h3 className="text-sm font-semibold mb-1 flex items-center gap-2">
+ ğŸ–¼ï¸ Custom Background Image
+ </h3>
+ <p className="text-[11px] text-zinc-400 mb-3">
+ This image becomes the background across the whole site â€” behind cards, the hero slider, and the profile page.
+ </p>
+ <div className="flex gap-2 mb-2">
+ <input
+ value={bgImageUrl.startsWith("data:") ? "" : bgImageUrl}
+ onChange={(e) => { setBgImageUrl(e.target.value); setBgImagePreview(e.target.value); }}
+ placeholder="Background image URL..."
+ className={`${inputClass} flex-1`}
+ />
+ <button onClick={() => bgFileRef.current?.click()} className={`${btnSecondary} !px-3 whitespace-nowrap`}>
+ <Download size={14} /> Upload
+ </button>
+ <input ref={bgFileRef} type="file" accept="image/*" onChange={handleBgFileSelect} className="hidden" />
+ </div>
+ {bgImagePreview && (
+ <div className="relative rounded-lg overflow-hidden mb-2">
+ <CachedImg src={bgImagePreview} alt="BG Preview" className="w-full h-24 object-cover rounded-lg opacity-60" loading="lazy" decoding="async" />
+ <button onClick={() => { setBgImageUrl(""); setBgImagePreview(""); }} className="absolute top-1.5 right-1.5 bg-red-500/80 rounded-full p-1">
+ <X size={12} className="text-white" />
+ </button>
+ </div>
+ )}
+ <button onClick={saveBgImage} className={`${btnPrimary} w-full justify-center`}>
+ <Save size={14} /> Save Background
+ </button>
+ </div>
+
+ {/* Create Custom Post */}
+ <div className={`${glassCard} p-4 mb-4`}>
+ <h3 className="text-sm font-semibold mb-1 flex items-center gap-2">
+ <Pin size={14} className="text-yellow-400" /> Create Custom Hero Post
+ </h3>
+ <p className="text-[11px] text-zinc-400 mb-4">
+ Upload an image or paste a link, then add title, description, colors, and font.
+ </p>
+
+ {/* Image Input */}
+ <div className="mb-3">
+ <label className="text-[11px] text-zinc-400 mb-1.5 block">ğŸ“· Banner Image</label>
+ <div className="flex gap-2 mb-2">
+ <input
+ value={imageUrl.startsWith("data:") ? "" : imageUrl}
+ onChange={(e) => handleImageUrlChange(e.target.value)}
+ placeholder="Enter image URL (https://...)"
+ className={`${inputClass} flex-1`}
+ />
+ <button
+ onClick={() => fileRef.current?.click()}
+ className={`${btnSecondary} !px-3 whitespace-nowrap`}
+ >
+ <Download size={14} /> Upload
+ </button>
+ <input ref={fileRef} type="file" accept="image/*" onChange={handleFileSelect} className="hidden" />
+ </div>
+ {imagePreview && (
+ <div className="relative rounded-lg overflow-hidden mb-2">
+ <CachedImg src={imagePreview} alt="Preview" className="w-full h-32 object-cover rounded-lg" loading="lazy" decoding="async" />
+ <button
+ onClick={() => { setImageUrl(""); setImagePreview(""); }}
+ className="absolute top-1.5 right-1.5 bg-red-500/80 rounded-full p-1"
+ >
+ <X size={12} className="text-white" />
+ </button>
+ </div>
+ )}
+ </div>
+
+ {/* Title */}
+ <div className="mb-3">
+ <label className="text-[11px] text-zinc-400 mb-1.5 block">ğŸ“ Title</label>
+ <input
+ value={title}
+ onChange={(e) => setTitle(e.target.value)}
+ placeholder="Post title..."
+ className={inputClass}
+ />
+ </div>
+
+ {/* Title Color */}
+ <div className="mb-3">
+ <label className="text-[11px] text-zinc-400 mb-1.5 block">ğŸ¨ Title Color</label>
+ <div className="flex items-center gap-2">
+ <input
+ type="color"
+ value={titleColor}
+ onChange={(e) => setTitleColor(e.target.value)}
+ className="w-10 h-10 rounded-lg border border-zinc-600 cursor-pointer bg-transparent"
+ />
+ <div className="flex flex-wrap gap-1.5">
+ {["#ffffff", "#f59e0b", "#ef4444", "#22c55e", "#3b82f6", "#a855f7", "#ec4899", "#06b6d4", "#000000"].map(c => (
+ <button
+ key={c}
+ onClick={() => setTitleColor(c)}
+ className={`w-7 h-7 rounded-full border-2 transition-all ${titleColor === c ? "border-white scale-110" : "border-zinc-600"}`}
+ style={{ background: c }}
+ />
+ ))}
+ </div>
+ </div>
+ {title && (
+ <p className="mt-2 text-lg font-bold" style={{ color: titleColor, fontFamily: titleFont || undefined }}>
+ {title}
+ </p>
+ )}
+ </div>
+
+ {/* Title Font */}
+ <div className="mb-3">
+ <label className="text-[11px] text-zinc-400 mb-1.5 block">ğŸ”¤ Title Font</label>
+ <div className="grid grid-cols-2 gap-1.5 max-h-[200px] overflow-y-auto">
+ {CUSTOM_FONTS.map(f => (
+ <button
+ key={f.id}
+ onClick={() => setTitleFont(f.family)}
+ className={`px-3 py-2 rounded-lg text-left text-xs transition-all border ${
+ titleFont === f.family
+ ? "border-green-500 bg-green-500/10 text-green-400"
+ : "border-zinc-700/50 text-zinc-300 hover:border-zinc-500"
+ }`}
+ style={{ fontFamily: f.family || undefined }}
+ >
+ {f.name}
+ </button>
+ ))}
+ </div>
+ </div>
+
+ {/* Description */}
+ <div className="mb-3">
+ <label className="text-[11px] text-zinc-400 mb-1.5 block">ğŸ“„ Description</label>
+ <textarea
+ value={description}
+ onChange={(e) => setDescription(e.target.value)}
+ placeholder="Write the full description shown on the detail page"
+ className={`${inputClass} !h-24 resize-none`}
+ rows={4}
+ />
+ </div>
+
+ <button onClick={addCustomPost} className={`${btnPrimary} w-full justify-center`}>
+ <Send size={14} /> Post
+ </button>
+ </div>
+
+ {/* Existing Posts */}
+ <div className={`${glassCard} p-4 mb-4`}>
+ <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+ <List size={14} className="text-blue-400" /> Posted Items ({pinnedPosts.length})
+ </h3>
+ {pinnedPosts.length === 0 ? (
+ <div className="text-center py-8">
+ <Pin size={24} className="mx-auto text-zinc-600 mb-2" />
+ <p className="text-xs text-zinc-500">No posts yet</p>
+ </div>
+ ) : (
+ <div className="space-y-2">
+ {pinnedPosts.map((post, idx) => (
+ <div key={post._key} className="flex items-start gap-3 p-2.5 rounded-lg bg-zinc-800/50 border border-zinc-700/50">
+ <span className="text-xs font-bold text-yellow-500 w-5 mt-1">#{idx + 1}</span>
+ <CachedImg src={post.backdrop} alt="" className="w-16 h-10 rounded object-cover shrink-0" loading="lazy" decoding="async" />
+ <div className="flex-1 min-w-0">
+ <p className="text-xs font-medium truncate" style={{ color: post.titleColor || "#fff", fontFamily: post.titleFont || undefined }}>{post.title}</p>
+ {post.description && (
+ <p className="text-[10px] text-zinc-400 line-clamp-2 mt-0.5">{post.description}</p>
+ )}
+ <p className="text-[10px] text-zinc-500 mt-0.5">
+ {post.isCustom ? "ğŸ“Œ Custom" : post.type === "webseries" ? "Series" : "Movie"} â€¢ {new Date(post.pinnedAt).toLocaleDateString()}
+ </p>
+ </div>
+ <button
+ onClick={() => unpinContent(post._key)}
+ className="p-1.5 rounded-lg hover:bg-red-500/20 text-red-400 transition-colors shrink-0"
+ >
+ <Trash2 size={14} />
+ </button>
+ </div>
+ ))}
+ </div>
+ )}
+ </div>
+ </div>
+ );
+};
+
+// ==================== RANDOM PRIZE LINK GENERATOR ====================
+const RandomPrizeLinkGenerator = ({ glassCard, inputClass, btnPrimary }: { glassCard: string; inputClass: string; btnPrimary: string }) => {
+ const [generating, setGenerating] = useState(false);
+ const [generatedLink, setGeneratedLink] = useState<string | null>(null);
+
+ const generatePrizeLink = async () => {
+ setGenerating(true);
+ setGeneratedLink(null);
+ try {
+ const { createRandomPrizeLink } = await import("@/lib/unlockAccess");
+ const result = await createRandomPrizeLink();
+ if (result.ok && result.shortUrl) {
+ setGeneratedLink(result.shortUrl);
+ toast.success("ğŸ Prize link generated!");
+ } else {
+ toast.error("Failed: " + (result.error || "Unknown error"));
+ }
+ } catch (err: any) {
+ toast.error("Error: " + err.message);
+ }
+ setGenerating(false);
+ };
+
+ return (
+ <div className={`${glassCard} p-4 mb-4`}>
+ <h3 className="text-sm font-semibold mb-1 flex items-center gap-2">
+ <Star size={14} className="text-yellow-400" /> ğŸ Random Prize Link
+ </h3>
+ <p className="text-[11px] text-muted-foreground mb-2">
+ Share this link anywhere. Each user gets a different random free-access duration (24hâ€“48h).
+ </p>
+ <div className="text-[10px] text-muted-foreground mb-3 space-y-0.5">
+ <p>ğŸŸ¢ 70% chance: 24-26 hours</p>
+ <p>ğŸ”µ 18% chance: 27-30 hours</p>
+ <p>ğŸŸ£ 7% chance: 31-35 hours</p>
+ <p>ğŸŸ¡ 3% chance: 36-41 hours</p>
+ <p>ğŸ”´ 1.5% chance: 42-47 hours</p>
+ <p>ğŸ† 0.5% chance: 48 hours (JACKPOT!)</p>
+ </div>
+ <div className="space-y-3">
+ <button
+ onClick={generatePrizeLink}
+ disabled={generating}
+ className={`${btnPrimary} w-full py-3.5 flex items-center justify-center gap-2 disabled:opacity-50`}
+ >
+ {generating ? (
+ <><RefreshCw size={16} className="animate-spin" /> Generating...</>
+ ) : (
+ <><Star size={16} /> Generate Prize Link</>
+ )}
+ </button>
+
+ {generatedLink && (
+ <div className="space-y-2">
+ <div className="text-center py-2 px-3 rounded-lg bg-gradient-to-r from-purple-500/20 to-pink-500/20 border border-purple-500/30">
+ <span className="text-xs font-semibold">
+ ğŸ² Each user gets a different random duration!
+ </span>
+ </div>
+ <div className="relative">
+ <input
+ value={generatedLink}
+ readOnly
+ className={inputClass + " pr-16 text-xs font-mono"}
+ onClick={(e) => (e.target as HTMLInputElement).select()}
+ />
+ <button
+ onClick={() => {
+ navigator.clipboard.writeText(generatedLink);
+ toast.success("Link copied!");
+ }}
+ className="absolute right-1 top-1/2 -translate-y-1/2 text-[10px] bg-primary/20 hover:bg-primary/40 px-2.5 py-1.5 rounded-lg font-semibold transition-all"
+ >
+ Copy
+ </button>
+ </div>
+ <p className="text-[10px] text-muted-foreground text-center">
+ â™¾ï¸ This link can be used unlimited times. Generating a new one disables the previous link.
+ </p>
+ </div>
+ )}
+ </div>
+ </div>
+ );
+};
+
+const Admin = forwardRef<HTMLDivElement>((_, _ref) => {
+ const adminBranding = useBranding();
+ useEffect(() => {
+ const nativeConfirm = window.confirm.bind(window);
+ const nativeAlert = window.alert.bind(window);
+ window.confirm = (message?: string) => nativeConfirm(translateAdminText(String(message ?? "")));
+ window.alert = (message?: any) => nativeAlert(typeof message === "string" ? translateAdminText(message) : message);
+ applyAdminEnglish(document.body);
+ const observer = new MutationObserver((mutations) => {
+ mutations.forEach((mutation) => {
+ if (mutation.type === "characterData" && mutation.target.parentNode) {
+ applyAdminEnglish(mutation.target.parentNode);
+ }
+ if (mutation.type === "attributes") {
+ applyAdminEnglish(mutation.target as Element);
+ }
+ mutation.addedNodes.forEach((node) => {
+ if (node.nodeType === Node.ELEMENT_NODE || node.nodeType === Node.TEXT_NODE) {
+ applyAdminEnglish(node.nodeType === Node.TEXT_NODE ? node.parentNode || document.body : (node as Element));
+ }
+ });
+ });
+ });
+ observer.observe(document.body, { childList: true, characterData: true, attributes: true, attributeFilter: ["placeholder", "title", "aria-label"], subtree: true });
+ return () => {
+ observer.disconnect();
+ window.confirm = nativeConfirm;
+ window.alert = nativeAlert;
+ };
+ }, []);
+ // Auth states
+ const [isAuthenticated, setIsAuthenticated] = useState(() => {
+ try {
+ const stored = localStorage.getItem("rs_admin_session");
+ if (stored) {
+ const parsed = JSON.parse(stored);
+ if (parsed.ts && Date.now() - parsed.ts < 7 * 24 * 60 * 60 * 1000) {
+ return true;
+ }
+ localStorage.removeItem("rs_admin_session");
+ }
+ } catch {}
+ return false;
+ });
+ const [loginPinInput, setLoginPinInput] = useState("");
+ const [loginLoading, setLoginLoading] = useState(false);
+ const [pinExists, setPinExists] = useState<boolean | null>(null); // null = loading
+ const [createPinInput, setCreatePinInput] = useState("");
+ const [createPinConfirm, setCreatePinConfirm] = useState("");
+ const [showPinSetup, setShowPinSetup] = useState(false);
+ const [newPinInput, setNewPinInput] = useState("");
+ const [currentPin, setCurrentPin] = useState("");
+
+  // ==================== URL-BASED SECTION ROUTING ====================
+  // Every admin section gets its own /admin/<slug> route so refresh persists
+  // and the browser treats each as a real page (less overlay lag).
+  const ROUTED_SECTIONS = useMemo(() => new Set<Section>([
+    "categories", "webseries", "weekly-episode", "movies", "users",
+    "new-releases", "tmdb-fetch", "add-content",
+    "redeem-codes", "bkash-payments", "premium-users", "device-limits", "maintenance", "free-access",
+    "settings", "comments", "analytics", "auto-import", "animesalt-manager",
+    "telegram-post", "tg-url-changer", "live-support", "ui-themes", "hero-pinned",
+    "edge-router", "branding", "ai-config", "live-tv", "url-changer",
+    "link-checker", "video-servers", "unlock-duration", "email-service", "apk-dw",
+    "egd-manager", "cf-manager", "fb-analytics", "adsterra", "backdrop-ai",
+    "security-center", "task-manager"
+  ]), []);
+  const routeParams = useParams<{ section?: string }>();
+  const routeNavigate = useNavigate();
+  const routeLocation = useLocation();
+
+  const initialSectionFromUrl = ((): Section => {
+    const s = routeParams.section as Section | undefined;
+    if (s && ROUTED_SECTIONS.has(s)) return s;
+    try {
+      const saved = sessionStorage.getItem("rs_adminSection") as Section | null;
+      if (saved) return saved;
+    } catch {}
+    return "dashboard";
+  })();
+
+  const [activeSection, setActiveSection] = useState<Section>(initialSectionFromUrl);
+
+
+  // Persist admin section (session + URL sync for routed sections)
+  useEffect(() => {
+    try { sessionStorage.setItem("rs_adminSection", activeSection); } catch {}
+    // Keep URL in sync for the routed sections. Use replace so we don't pollute history
+    // (the existing popstate handler expects a single admin history entry).
+    try {
+      const targetPath = ROUTED_SECTIONS.has(activeSection) ? `/admin/${activeSection}` : "/admin";
+      if (routeLocation.pathname !== targetPath) {
+        routeNavigate(targetPath, { replace: true });
+      }
+    } catch {}
+  }, [activeSection, ROUTED_SECTIONS, routeLocation.pathname, routeNavigate]);
+
+  // React to external URL changes (e.g. user types /admin/movies directly, or browser back/forward).
+  // IMPORTANT: do NOT depend on `activeSection` here. When the user clicks a menu item,
+  // `activeSection` updates one render before `routeParams.section` catches up (the URL is
+  // synced via the effect above). If this effect re-ran on the intermediate render, it
+  // would see the stale URL param and immediately revert `activeSection` â€” producing an
+  // infinite ping-pong between the previous and new section (the "flash flash flash").
+  // Using a functional setState keeps this in sync only when the URL genuinely changes.
+  useEffect(() => {
+    const s = routeParams.section as Section | undefined;
+    if (s && ROUTED_SECTIONS.has(s)) {
+      setActiveSection(prev => (prev === s ? prev : s));
+    }
+  }, [routeParams.section, ROUTED_SECTIONS]);
+ const [sidebarOpen, setSidebarOpen] = useState(false);
+ const [dropdownOpen, setDropdownOpen] = useState(false);
+ const [firebaseConnected, setFirebaseConnected] = useState(false);
+ const [fetchingOverlay, setFetchingOverlay] = useState(false);
+
+ // Data state
+ const [categoriesData, setCategoriesData] = useState<Record<string, any>>({});
+ const [webseriesData, setWebseriesData] = useState<any[]>([]);
+ const [moviesData, setMoviesData] = useState<any[]>([]);
+  const [adminFastCounts, setAdminFastCounts] = useState({ webseries: 0, movies: 0, users: 0 });
+   const [adminContentLoading, setAdminContentLoading] = useState({ webseries: true, movies: true });
+  const [adminBusyTask, setAdminBusyTask] = useState<string | null>(null);
+  const adminLoadContentListRef = useRef<((kind: AdminContentKind, opts?: { force?: boolean }) => Promise<void>) | null>(null);
+  const adminContentLoadedAtRef = useRef<Record<AdminContentKind, number>>({ webseries: 0, movies: 0 });
+  const adminContentInFlightRef = useRef<Partial<Record<AdminContentKind, Promise<void>>>>({});
+  const warmAdminPosters = useCallback((items: any[]) => {
+   const posters = (items || []).map((item: any) => item?.poster || item?.backdrop).filter(Boolean);
+   if (!posters.length) return;
+   adminIdle(() => { void preloadCachedImages(posters, ADMIN_POSTER_WARM_LIMIT); }, 900);
+  }, []);
+ const upsertAdminContentListItem = useCallback((kind: AdminContentKind, id: string, item: any) => {
+  const listItem = buildAdminContentIndexItem(id, item, kind);
+  const setter = kind === "movies" ? setMoviesData : setWebseriesData;
+  startTransition(() => setter(prev => {
+   const next = mergeAdminContentLists(prev, [listItem]);
+   writeCachedAdminContentList(kind, next);
+    warmAdminPosters(next);
+   return next;
+  }));
+  }, [warmAdminPosters]);
+ const removeAdminContentListItem = useCallback((kind: AdminContentKind, id: string) => {
+  const setter = kind === "movies" ? setMoviesData : setWebseriesData;
+  startTransition(() => setter(prev => {
+   const next = sortAdminContentList(prev.filter((item: any) => item.id !== id));
+   writeCachedAdminContentList(kind, next);
+   return next;
+  }));
+ }, []);
+ const getFullAdminContentItem = useCallback(async (kind: AdminContentKind, id: string) => {
+  const snap = await get(ref(db, `${kind}/${id}`));
+  const data = snap.val();
+  if (!data) return null;
+  upsertAdminContentListItem(kind, id, data);
+  return { id, ...data };
+  }, [upsertAdminContentListItem]);
+  const loadAdminContentList = useCallback(async (kind: AdminContentKind, opts?: { force?: boolean }) => {
+   const force = !!opts?.force;
+   const setter = kind === "movies" ? setMoviesData : setWebseriesData;
+   const now = Date.now();
+   const cached = !force ? readCachedAdminContentList(kind) : [];
+   if (cached.length) {
+    const sorted = sortAdminContentList(cached);
+    startTransition(() => {
+     setter(prev => areAdminContentListsSame(prev, sorted) ? prev : sorted);
+     setAdminContentLoading(prev => prev[kind] ? ({ ...prev, [kind]: false }) : prev);
+    });
+    warmAdminPosters(sorted);
+    if (!force && isAdminContentCacheFresh(kind)) {
+     adminContentLoadedAtRef.current[kind] = now;
+     return;
+    }
+   }
+   if (!force && cached.length && now - adminContentLoadedAtRef.current[kind] < ADMIN_CONTENT_RELOAD_TTL_MS && isAdminContentCacheFresh(kind)) return;
+   const running = adminContentInFlightRef.current[kind];
+   if (running) return running;
+   if (!cached.length) setAdminContentLoading(prev => prev[kind] ? prev : ({ ...prev, [kind]: true }));
+   const task = (async () => {
+    try {
+     const indexed = await fetchAdminContentIndex(kind).catch(() => []);
+     const fallback = indexed.length ? [] : await fetchRecentAdminContentList(kind).catch(() => []);
+     const next = mergeAdminContentLists(indexed, fallback, cached);
+     if (next.length) {
+      writeCachedAdminContentList(kind, next);
+      warmAdminPosters(next);
+      startTransition(() => {
+       setter(prev => areAdminContentListsSame(prev, next) ? prev : next);
+       setAdminContentLoading(prev => prev[kind] ? ({ ...prev, [kind]: false }) : prev);
+      });
+     } else {
+      startTransition(() => setAdminContentLoading(prev => prev[kind] ? ({ ...prev, [kind]: false }) : prev));
+     }
+     adminContentLoadedAtRef.current[kind] = Date.now();
+    } finally {
+     delete adminContentInFlightRef.current[kind];
+    }
+   })();
+   adminContentInFlightRef.current[kind] = task;
+   return task;
+  }, [warmAdminPosters]);
+ const [usersData, setUsersData] = useState<any[]>(() => {
+  try {
+   const cached = JSON.parse(sessionStorage.getItem("rs_admin_users_cache_v1") || "null");
+   return cached?.ts && Date.now() - Number(cached.ts) < 5 * 60 * 1000 && Array.isArray(cached.items) ? cached.items : [];
+  } catch { return []; }
+ });
+ const [appUsersGlobal, setAppUsersGlobal] = useState<Record<string, any>>(() => {
+  try {
+   const cached = JSON.parse(sessionStorage.getItem("rs_admin_app_users_cache_v1") || "null");
+   return cached?.ts && Date.now() - Number(cached.ts) < 5 * 60 * 1000 && cached.items ? cached.items : {};
+  } catch { return {}; }
+ });
+ const [userSearchQuery, setUserSearchQuery] = useState("");
+ const [debouncedUserSearch, setDebouncedUserSearch] = useState("");
+ useEffect(() => {
+ const t = setTimeout(() => setDebouncedUserSearch(userSearchQuery), 150);
+ return () => clearTimeout(t);
+ }, [userSearchQuery]);
+ const filteredUsersList = useMemo(() => {
+ const q = debouncedUserSearch.trim().toLowerCase();
+ if (!q) return usersData;
+ return usersData.filter(u => {
+ const name = String(u.name || "").toLowerCase();
+ const email = String(u.email || "").toLowerCase();
+ const id = String(u.id || "").toLowerCase();
+ return name.includes(q) || email.includes(q) || id.includes(q);
+ });
+ }, [usersData, debouncedUserSearch]);
+ const [releasesData, setReleasesData] = useState<any[]>([]);
+ const [commentsData, setCommentsData] = useState<any[]>([]);
+
+ // Form states
+ const [categoryInput, setCategoryInput] = useState("");
+ const [seriesTab, setSeriesTab] = useState<"ws-list" | "ws-add" | "ws-manual" | "ws-weekly" | "ws-an">("ws-list");
+ const [moviesTab, setMoviesTab] = useState<"mv-list" | "mv-add" | "mv-manual" | "mv-an">("mv-list");
+ const [fetchType, setFetchType] = useState<"movie" | "tv">("movie");
+ const [quickTmdbId, setQuickTmdbId] = useState("");
+
+ // Series form
+ const [seriesForm, setSeriesForm] = useState<any>(null);
+ const [seriesCast, setSeriesCast] = useState<CastMember[]>([]);
+ const [seasonsData, setSeasonsData] = useState<Season[]>([]);
+ const [seriesSeasonsByLanguage, setSeriesSeasonsByLanguage] = useState<SeasonsByLanguage>({});
+ const [seriesSearch, setSeriesSearch] = useState("");
+ const [seriesResults, setSeriesResults] = useState<any[]>([]);
+ const [seriesEditId, setSeriesEditId] = useState("");
+
+ // Movie form
+ const [movieForm, setMovieForm] = useState<any>(null);
+ const [movieCast, setMovieCast] = useState<CastMember[]>([]);
+ const [movieSearch, setMovieSearch] = useState("");
+ const [movieResults, setMovieResults] = useState<any[]>([]);
+ const [wsListSearch, setWsListSearch] = useState("");
+ const [mvListSearch, setMvListSearch] = useState("");
+ const deferredWsListSearch = useDeferredValue(wsListSearch);
+ const deferredMvListSearch = useDeferredValue(mvListSearch);
+ const filteredWebseriesAdminList = useMemo(() => filterAdminSeriesList(webseriesData, deferredWsListSearch), [webseriesData, deferredWsListSearch]);
+ const filteredMoviesAdminList = useMemo(() => filterAdminMovieList(moviesData, deferredMvListSearch), [moviesData, deferredMvListSearch]);
+ // Load-more pagination â€” 15 cards per page keeps the DOM tiny and avoids
+ // the multi-second lag from rendering hundreds of poster cards at once.
+ const ADMIN_LIST_PAGE = 15;
+ const [wsListLimit, setWsListLimit] = useState(ADMIN_LIST_PAGE);
+ const [mvListLimit, setMvListLimit] = useState(ADMIN_LIST_PAGE);
+ // Reset the visible window whenever the search query changes so results
+ // are instant and never "hidden" behind an old pagination cursor.
+ useEffect(() => { setWsListLimit(ADMIN_LIST_PAGE); }, [deferredWsListSearch]);
+ useEffect(() => { setMvListLimit(ADMIN_LIST_PAGE); }, [deferredMvListSearch]);
+ const [movieEditId, setMovieEditId] = useState("");
+
+ // Notification form
+ const [notifTitle, setNotifTitle] = useState("");
+ const [notifMessage, setNotifMessage] = useState("");
+ const [notifContent, setNotifContent] = useState("");
+ const [notifType, setNotifType] = useState("info");
+ const [notifTarget, setNotifTarget] = useState("all");
+  const contentOptions = useMemo<{ value: string; label: string; poster: string; backdrop?: string }[]>(() => {
+   const options: { value: string; label: string; poster: string; backdrop?: string; createdAt: number }[] = [];
+   webseriesData.forEach(s => options.push({ value: `${s.id}|webseries`, label: `Series: ${s.title}`, poster: s.poster || "", backdrop: s.backdrop || "", createdAt: s.updatedAt || s.createdAt || 0 }));
+   moviesData.forEach(m => options.push({ value: `${m.id}|movie`, label: `Movie: ${m.title}`, poster: m.poster || "", backdrop: m.backdrop || "", createdAt: m.updatedAt || m.createdAt || 0 }));
+   options.sort((a, b) => b.createdAt - a.createdAt);
+   return options;
+  }, [webseriesData, moviesData]);
+ const [notifDropdownOpen, setNotifDropdownOpen] = useState(false);
+ const [releaseDropdownOpen, setReleaseDropdownOpen] = useState(false);
+ const notifDropdownRef = useRef<HTMLDivElement>(null);
+ const releaseDropdownRef = useRef<HTMLDivElement>(null);
+
+ // New release form
+ const [releaseContent, setReleaseContent] = useState("");
+ const [releaseSeason, setReleaseSeason] = useState("");
+ const [releaseEpisode, setReleaseEpisode] = useState("");
+ const [releaseEpisodeEnd, setReleaseEpisodeEnd] = useState("");
+ const [releaseSeasons, setReleaseSeasons] = useState<any[]>([]);
+ const [releaseEpisodes, setReleaseEpisodes] = useState<any[]>([]);
+ const [showSeasonEpisode, setShowSeasonEpisode] = useState(false);
+ const [releaseSearchQuery, setReleaseSearchQuery] = useState("");
+ const [releaseContentSearch, setReleaseContentSearch] = useState("");
+ const deferredReleaseContentSearch = useDeferredValue(releaseContentSearch);
+
+ // Browser Push (own section, independent from New Release)
+ const [pushContent, setPushContent] = useState("");
+ const [pushSeason, setPushSeason] = useState("");
+ const [pushEpisode, setPushEpisode] = useState("");        // start ep index
+ const [pushEpisodeEnd, setPushEpisodeEnd] = useState("");  // end ep index (inclusive)
+ const [pushSeasons, setPushSeasons] = useState<any[]>([]);
+ const [pushEpisodes, setPushEpisodes] = useState<any[]>([]);
+ const [pushShowSeasonEp, setPushShowSeasonEp] = useState(false);
+ const [pushDropdownOpen, setPushDropdownOpen] = useState(false);
+ const [pushContentSearch, setPushContentSearch] = useState("");
+ const [pushTitleOverride, setPushTitleOverride] = useState("");
+ const [pushBodyOverride, setPushBodyOverride] = useState("");
+  const [pushLastResult, setPushLastResult] = useState<string>("");
+  const [pushRecipients, setPushRecipients] = useState<BrowserPushRecipient[]>([]);
+
+ // Redeem code state
+ const [redeemCodesData, setRedeemCodesData] = useState<any[]>([]);
+ const [newCodeDays, setNewCodeDays] = useState("30");
+ const [newCodeNote, setNewCodeNote] = useState("");
+
+ // bKash Payment states
+ const [bkashSettings, setBkashSettings] = useState<any>({
+ phoneNumber: "",
+ accountType: "Agent",
+ qrCodeLink: "",
+ instructions: "Send Money to the number below and submit the Transaction ID.",
+ plans: [
+ { id: "plan1", name: "1 Month", days: 30, price: 100, active: true },
+ { id: "plan2", name: "3 Months", days: 90, price: 250, active: true },
+ { id: "plan3", name: "6 Months", days: 180, price: 450, active: true },
+ ],
+ });
+ const [bkashPaymentRequests, setBkashPaymentRequests] = useState<any[]>([]);
+ const [bkashSettingsLoaded, setBkashSettingsLoaded] = useState(false);
+
+ // Free access users state
+ const [freeAccessUsers, setFreeAccessUsers] = useState<any[]>([]);
+ const [prizePoolUsers, setPrizePoolUsers] = useState<any[]>([]);
+ const [freeAccessBusy, setFreeAccessBusy] = useState<string | null>(null);
+
+ // Settings state
+ const [tutorialLink, setTutorialLink] = useState("");
+ const [tutorialLinkInput, setTutorialLinkInput] = useState("");
+ const [tutorialVideos, setTutorialVideos] = useState<{ title: string; url: string }[]>([]);
+ const [newTutorialTitle, setNewTutorialTitle] = useState("");
+ const [newTutorialUrl, setNewTutorialUrl] = useState("");
+ const [adminUserIdInput, setAdminUserIdInput] = useState("");
+ const [savedAdminUserId, setSavedAdminUserId] = useState("");
+ const [adminFcmTokensInput, setAdminFcmTokensInput] = useState("");
+ const [savedAdminFcmTokens, setSavedAdminFcmTokens] = useState<string[]>([]);
+
+ // Maintenance state
+ const [maintenanceActive, setMaintenanceActive] = useState(false);
+ const [maintenanceMessage, setMaintenanceMessage] = useState("Server is under maintenance. Please wait.");
+ const [maintenanceResumeDate, setMaintenanceResumeDate] = useState("");
+ const [currentMaintenance, setCurrentMaintenance] = useState<any>(null);
+
+ // Global free access state
+ const [globalFreeAccess, setGlobalFreeAccess] = useState<any>(null);
+ const [globalFreeHours, setGlobalFreeHours] = useState("2");
+ const [globalFreeMinutes, setGlobalFreeMinutes] = useState("0");
+
+ // Analytics state
+ const [analyticsViews, setAnalyticsViews] = useState<Record<string, any>>({});
+ const [activeViewers, setActiveViewers] = useState<Record<string, any>>({});
+ const [dailyActiveUsers, setDailyActiveUsers] = useState<Record<string, any>>({});
+ const [allTimeTotals, setAllTimeTotals] = useState<Record<string, { count: number; title?: string; lastSeen?: number }>>({});
+
+ // AnimeSalt selected data for content options
+ const [animesaltSelectedData, setAnimesaltSelectedData] = useState<Record<string, any>>({});
+
+ // Push progress state
+  const [pushProgress, setPushProgress] = useState<PushProgress | null>(null);
+  const [pushSending, setPushSending] = useState(false);
+  const [pushResetting, setPushResetting] = useState(false);
+  const [fcmTokenStats, setFcmTokenStats] = useState<{ totalTokens: number; totalUsers: number; lastUpdated: number }>({
+  totalTokens: 0,
+  totalUsers: 0,
+  lastUpdated: 0,
+  });
+
+ // Expanded episodes
+ const [expandedSeasons, setExpandedSeasons] = useState<Record<number, boolean>>({});
+  const [episodeRenderLimits, setEpisodeRenderLimits] = useState<Record<number, number>>({});
+
+ // JSON import for Web Series
+ const [wsJsonImportMode, setWsJsonImportMode] = useState(false);
+ const [wsJsonPasteText, setWsJsonPasteText] = useState("");
+ const wsJsonFileRef = useRef<HTMLInputElement>(null);
+
+ // Telegram post states
+ const [tgChannelId, setTgChannelId] = useState(TELEGRAM_CHANNEL);
+ const [tgSelectedRelease, setTgSelectedRelease] = useState("");
+ const [tgTitle, setTgTitle] = useState("");
+ const [tgSeason, setTgSeason] = useState("");
+ const [tgTotalEpisodes, setTgTotalEpisodes] = useState("");
+ const [tgQuality, setTgQuality] = useState("480p,720p,1080p,4K");
+ const [tgNewEpAdded, setTgNewEpAdded] = useState("");
+ const [tgPosterUrl, setTgPosterUrl] = useState("");
+ const [tgButtonLink, setTgButtonLink] = useState("");
+ const [tgButtons, setTgButtons] = useState<{ name: string; url: string }[]>([]);
+ const [tgDefaultButtonName, setTgDefaultButtonName] = useState(DEFAULT_TG_BUTTON_TEXT);
+ // Currently-selected anime (for per-anime button persistence)
+ const [tgSelectedAnimeId, setTgSelectedAnimeId] = useState<string>("");
+ 
+  // Season combination selection
+  const [comboSelection, setComboSelection] = useState<number[]>([]);
+  const [isComboMode, setIsComboMode] = useState(false);
+
+
+
+ // Auto-save per-anime telegram custom buttons whenever the admin edits them
+
+ useEffect(() => {
+ if (!tgSelectedAnimeId) return;
+ const safeId = String(tgSelectedAnimeId).replace(/[^a-zA-Z0-9_-]/g, "_");
+ const t = setTimeout(() => {
+ const cleanedButtons = tgButtons
+  .map(b => ({ name: normalizeTelegramButtonText(String(b?.name || "").trim()), url: String(b?.url || "").trim() }))
+ .filter(b => b.name && b.url);
+ set(ref(db, `telegramPerAnimeButtons/${safeId}`), {
+ defaultButtonName: tgDefaultButtonName || "",
+ buttons: cleanedButtons,
+ updatedAt: Date.now(),
+ }).catch(() => {});
+ }, 600);
+ return () => clearTimeout(t);
+ }, [tgSelectedAnimeId, tgButtons, tgDefaultButtonName]);
+ const [tgSending, setTgSending] = useState(false);
+ // Bulk catalog broadcaster â€” sends random 20 anime per post, no duplicates across sends
+ const [tgBulkSending, setTgBulkSending] = useState(false);
+ const [tgBulkBatchSize, setTgBulkBatchSize] = useState(20);
+ const [tgBulkHeader, setTgBulkHeader] = useState("ğŸŒ ğ—¥ğ—¦ ğ—”ğ—¡ğ—œğ— ğ—˜ â€” ğ—™ğ—¥ğ—˜ğ—¦ğ—› ğ——ğ—¥ğ—¢ğ—£");
+ const [tgBulkFooter, setTgBulkFooter] = useState("ğŸ”— Watch Free â€¢ Daily Updates");
+ const [tgBulkSentIds, setTgBulkSentIds] = useState<Record<string, number>>({});
+ const [tgBulkProgress, setTgBulkProgress] = useState<{ done: number; total: number } | null>(null);
+ useEffect(() => {
+ const unsub = onValue(ref(db, "telegramBulkBroadcast/sentIds"), (snap) => {
+ setTgBulkSentIds(snap.val() || {});
+ });
+ return () => unsub();
+ }, []);
+ const [tgDropdownOpen, setTgDropdownOpen] = useState(false);
+ const [tgContentSearch, setTgContentSearch] = useState("");
+ const tgDropdownRef = useRef<HTMLDivElement>(null);
+ const [tgDubType, setTgDubType] = useState<"official" | "fandub">("official");
+ const [tgLanguages, setTgLanguages] = useState("Hindi");
+ const [tgStatus, setTgStatus] = useState<"ongoing" | "complete">("ongoing");
+ const [tgStatusAuto, setTgStatusAuto] = useState(true);
+ const [tgRating, setTgRating] = useState("8.5");
+ const [tgGenres, setTgGenres] = useState("Animation, Action & Adventure, Sci-Fi & Fantasy");
+ const [tgImdbId, setTgImdbId] = useState("");
+ const [tgImdbLoading, setTgImdbLoading] = useState(false);
+ const [tgSeasonEpLabel, setTgSeasonEpLabel] = useState("#all");
+ // Telegram footer links (admin-managed)
+ const [tgFooterLinks, setTgFooterLinks] = useState<{ label: string; url: string; emoji: string }[]>([]);
+ const [tgHashtags, setTgHashtags] = useState(DEFAULT_TG_HASHTAGS);
+
+ // ===== Content kind + editable templates =====
+ const [tgContentKind, setTgContentKind] = useState<"series" | "movie">("series");
+ const [tgMovieType, setTgMovieType] = useState("Full Movie");
+ const [tgOwnerUsername, setTgOwnerUsername] = useState(DEFAULT_TG_OWNER_USERNAME);
+ const [tgTemplateSeries, setTgTemplateSeries] = useState(DEFAULT_TG_TEMPLATE_SERIES);
+ const [tgTemplateMovie, setTgTemplateMovie] = useState(DEFAULT_TG_TEMPLATE_MOVIE);
+ const [tgTemplateTab, setTgTemplateTab] = useState<"series" | "movie">("series");
+ const [tgTemplateSaving, setTgTemplateSaving] = useState(false);
+
+ useEffect(() => {
+  const unsub = onValue(ref(db, "admin/tgTemplates"), (snap) => {
+   const v = snap.val() || {};
+   if (typeof v.series === "string" && v.series.trim()) setTgTemplateSeries(v.series);
+   if (typeof v.movie === "string" && v.movie.trim()) setTgTemplateMovie(v.movie);
+   if (typeof v.ownerUsername === "string" && v.ownerUsername.trim()) setTgOwnerUsername(v.ownerUsername.trim());
+  });
+  return () => unsub();
+ }, []);
+
+ const saveTgTemplates = async () => {
+  setTgTemplateSaving(true);
+  try {
+   await set(ref(db, "admin/tgTemplates"), {
+    series: tgTemplateSeries,
+    movie: tgTemplateMovie,
+    ownerUsername: (tgOwnerUsername || DEFAULT_TG_OWNER_USERNAME).replace(/^@/, "").trim(),
+    updatedAt: Date.now(),
+   });
+   toast.success("Templates saved");
+  } catch (e: any) { toast.error("Save failed: " + (e?.message || e)); }
+  finally { setTgTemplateSaving(false); }
+ };
+
+
+
+ // Auto-derive Ongoing/Complete from total vs latest added episode (live)
+ useEffect(() => {
+ if (!tgStatusAuto) return;
+ const total = parseInt(String(tgTotalEpisodes).replace(/[^\d]/g, ""), 10);
+ const parts = String(tgNewEpAdded || "").split("-").map(v => parseInt(v.replace(/[^\d]/g, ""), 10));
+ const latest = parts.filter(n => !isNaN(n)).pop();
+ if (!isFinite(total) || total <= 0 || latest === undefined || isNaN(latest)) {
+ setTgStatus("ongoing");
+ return;
+ }
+ setTgStatus(latest >= total ? "complete" : "ongoing");
+ }, [tgStatusAuto, tgTotalEpisodes, tgNewEpAdded]);
+
+ // ğŸ¯ Auto-derive Telegram watch button link as a DEEP LINK to the FIRST episode
+ // of the newly-added range. Example: tgNewEpAdded="37-39", tgSeason="02" â†’
+ // link points to season 2 episode 37 so users land directly on that episode in
+ // the video player. For single episodes it points to that one. For movies it
+ // omits season/episode params.
+ useEffect(() => {
+ if (!tgSelectedAnimeId) return;
+ const seasonNum = parseInt(String(tgSeason).replace(/[^\d]/g, ""), 10);
+ const epStartRaw = String(tgNewEpAdded || "").split("-")[0] || "";
+ const epStart = parseInt(epStartRaw.replace(/[^\d]/g, ""), 10);
+ const isMovie = /movie/i.test(String(tgSeason)) || /movie|full/i.test(String(tgNewEpAdded));
+ if (isMovie || !isFinite(seasonNum) || !isFinite(epStart)) {
+ setTgButtonLink(buildEpisodeShareUrl(tgSelectedAnimeId));
+ return;
+ }
+ const content = webseriesData.find(s => s.id === tgSelectedAnimeId);
+ const seasonIdx = Math.max(0, seasonNum - 1);
+ const epIdx = getEpisodeIndexForShare(content?.seasons?.[seasonIdx], epStart, Math.max(0, epStart - 1));
+ setTgButtonLink(buildEpisodeShareUrl(tgSelectedAnimeId, seasonIdx, epIdx));
+ }, [tgSelectedAnimeId, tgSeason, tgNewEpAdded, webseriesData]);
+
+ // Load saved TG footer links from Firebase
+ useEffect(() => {
+ const unsub = onValue(ref(db, "admin/tgFooterLinks"), (snap) => {
+ const data = snap.val();
+ if (data) {
+ setTgFooterLinks(Object.values(data));
+ } else {
+ // Default links
+ setTgFooterLinks([
+ { label: "Já´ÉªÉ´ Má´€ÉªÉ´ CÊœá´€É´É´á´‡ÊŸ", url: "https://t.me/CARTOONFUNNY03", emoji: "ğŸ”°" },
+ { label: "Já´ÉªÉ´ CÊœá´€á´› GÊ€á´á´œá´˜", url: "https://t.me/HINDIANIME03", emoji: "ğŸ”°" },
+ { label: "Sá´œá´˜á´˜á´Ê€á´› & Cá´É´á´›á´€á´„á´›", url: "https://t.me/RSAnime03_Support", emoji: "ğŸ”°" },
+ ]);
+ }
+ });
+ const unsub2 = onValue(ref(db, "admin/tgHashtags"), (snap) => {
+ if (snap.val()) setTgHashtags(normalizeTelegramBaseHashtags(snap.val()));
+ });
+ return () => { unsub(); unsub2(); };
+ }, []);
+
+ // Resolve anime-accurate genres + rating using TMDB ID/IMDB ID, with AniList fallback for anime-specific genres
+   const resolveTelegramGenresAndRating = async (tmdbIdOrImdb: string, fallbackTitle?: string, fallbackCategory?: string) => {
+   const idTrimmed = String(tmdbIdOrImdb || "").trim();
+   const title = String(fallbackTitle || "").trim();
+   const localCats = String(fallbackCategory || "").split(/[,/|]+/).map(s => s.trim()).filter(Boolean);
+   if (!idTrimmed && !title) return { genres: localCats, rating: "" };
+
+  // No ID â†’ try searching TMDB by title (TV first, then movie).
+  let workingId = idTrimmed;
+  let workingKind: "tv" | "movie" | "" = "";
+  if (!workingId && title) {
+    try {
+      const q = encodeURIComponent(title);
+      const tvSearch = await fetch(`${TMDB_BASE_URL}/search/tv?api_key=${TMDB_API_KEY}&language=en-US&query=${q}`);
+      const tvJson = tvSearch.ok ? await tvSearch.json() : null;
+      if (tvJson?.results?.[0]?.id) {
+        workingId = String(tvJson.results[0].id);
+        workingKind = "tv";
+      } else {
+        const mvSearch = await fetch(`${TMDB_BASE_URL}/search/movie?api_key=${TMDB_API_KEY}&language=en-US&query=${q}`);
+        const mvJson = mvSearch.ok ? await mvSearch.json() : null;
+        if (mvJson?.results?.[0]?.id) {
+          workingId = String(mvJson.results[0].id);
+          workingKind = "movie";
+        }
+      }
+    } catch {}
+  }
+  if (!workingId) return { genres: localCats, rating: "" };
+
+  let tmdbData: any = null;
+  if (workingId.startsWith("tt")) {
+  const findRes = await fetch(`${TMDB_BASE_URL}/find/${workingId}?api_key=${TMDB_API_KEY}&external_source=imdb_id`);
+  const findData = await findRes.json();
+  const tvResult = findData.tv_results?.[0];
+  const movieResult = findData.movie_results?.[0];
+  if (tvResult?.id) {
+  const detailRes = await fetch(`${TMDB_BASE_URL}/tv/${tvResult.id}?api_key=${TMDB_API_KEY}&language=en-US`);
+  if (detailRes.ok) tmdbData = await detailRes.json();
+  } else if (movieResult?.id) {
+  const detailRes = await fetch(`${TMDB_BASE_URL}/movie/${movieResult.id}?api_key=${TMDB_API_KEY}&language=en-US`);
+  if (detailRes.ok) tmdbData = await detailRes.json();
+  }
+  } else if (workingKind === "movie") {
+  const movieRes = await fetch(`${TMDB_BASE_URL}/movie/${workingId}?api_key=${TMDB_API_KEY}&language=en-US`);
+  if (movieRes.ok) tmdbData = await movieRes.json();
+  } else {
+  const tvRes = await fetch(`${TMDB_BASE_URL}/tv/${workingId}?api_key=${TMDB_API_KEY}&language=en-US`);
+  if (tvRes.ok) {
+  tmdbData = await tvRes.json();
+  } else {
+  const movieRes = await fetch(`${TMDB_BASE_URL}/movie/${workingId}?api_key=${TMDB_API_KEY}&language=en-US`);
+  if (movieRes.ok) tmdbData = await movieRes.json();
+  }
+  }
+
+ const tmdbGenres = Array.isArray(tmdbData?.genres)
+ ? tmdbData.genres.map((g: any) => String(g?.name || "").trim()).filter(Boolean)
+ : [];
+ const genericGenreSet = new Set(["Animation", "Action & Adventure", "Sci-Fi & Fantasy", "Comedy", "Drama", "Mystery", "Family"]);
+ const isTooGenericTmdb = tmdbGenres.length > 0 && tmdbGenres.every((name: string) => genericGenreSet.has(name));
+ const animeTitle = (fallbackTitle || tmdbData?.name || tmdbData?.title || tmdbData?.original_name || tmdbData?.original_title || "").trim();
+
+ let animeGenres: string[] = [];
+ let aniListRating = "";
+
+ if (animeTitle) {
+ try {
+ const aniRes = await fetch("https://graphql.anilist.co", {
+ method: "POST",
+ headers: { "Content-Type": "application/json", Accept: "application/json" },
+ body: JSON.stringify({
+ query: `query ($search: String) { Media(search: $search, type: ANIME) { genres averageScore title { romaji english native } } }`,
+ variables: { search: animeTitle },
+ }),
+ });
+ const aniData = await aniRes.json();
+ const media = aniData?.data?.Media;
+ if (Array.isArray(media?.genres) && media.genres.length > 0) {
+ animeGenres = media.genres.map((g: any) => String(g || "").trim()).filter(Boolean);
+ }
+ if (media?.averageScore) {
+ aniListRating = (Number(media.averageScore) / 10).toFixed(1);
+ }
+ } catch {}
+ }
+
+ const finalGenres = animeGenres.length > 0
+ ? animeGenres
+ : (tmdbGenres.length > 0 && !isTooGenericTmdb ? tmdbGenres : tmdbGenres);
+
+ const dedupedGenres = [...new Set(finalGenres)];
+ const genresOut = dedupedGenres.length > 0 ? dedupedGenres : localCats;
+
+ return {
+ genres: genresOut,
+ rating: tmdbData?.vote_average ? Number(tmdbData.vote_average).toFixed(1) : aniListRating,
+ };
+ };
+
+ // Fetch anime-accurate genres + rating using TMDB ID/IMDB ID, with AniList fallback for anime-specific genres
+ const fetchTmdbGenres = async (tmdbIdOrImdb: string, fallbackTitle?: string) => {
+ if (!tmdbIdOrImdb.trim()) return;
+ setTgImdbLoading(true);
+ try {
+ const { genres, rating } = await resolveTelegramGenresAndRating(tmdbIdOrImdb, fallbackTitle);
+
+ if (genres.length > 0) {
+ setTgGenres(genres.join(", "));
+ }
+ if (rating) {
+ setTgRating(rating);
+ }
+
+ if (genres.length > 0 || rating) {
+ toast.success("âœ… Anime-specific genres and rating loaded");
+ } else {
+ toast.error("No genre data found for this ID");
+ }
+ } catch {
+ toast.error("Genre fetch failed");
+ } finally {
+ setTgImdbLoading(false);
+ }
+ };
+
+ // Category bulk assignment states
+ const [catBulkSearch, setCatBulkSearch] = useState("");
+ const [catBulkSelected, setCatBulkSelected] = useState<string[]>([]);
+ const [catBulkCategory, setCatBulkCategory] = useState("");
+
+ // Google auth for admin
+ const [adminGoogleEmail, setAdminGoogleEmail] = useState("");
+ const [googleAuthLoading, setGoogleAuthLoading] = useState(false);
+ const wsSeasonJsonFileRef = useRef<HTMLInputElement>(null);
+ const [wsSeasonJsonTarget, setWsSeasonJsonTarget] = useState<number>(-1);
+ const [wsSeasonPasteTarget, setWsSeasonPasteTarget] = useState<number>(-1);
+ const [wsSeasonPasteText, setWsSeasonPasteText] = useState("");
+
+ // Save + Notify modal states
+ const [wsSaveNotifyModal, setWsSaveNotifyModal] = useState(false);
+ const [wsNotifyStep, setWsNotifyStep] = useState<"release" | "telegram">("release");
+ const [wsNotifySeason, setWsNotifySeason] = useState("");
+ const [wsNotifyEpisode, setWsNotifyEpisode] = useState("");
+ const [wsNotifyEpisodeEnd, setWsNotifyEpisodeEnd] = useState("");
+ // Captured context for Save+Notify (saveSeries resets form, so we save context before)
+ const wsNotifyContextRef = useRef<{ seriesId: string; form: any; seasons: any[] } | null>(null);
+ // Baseline of episodes when series was loaded for edit. Used to auto-detect new episodes for Save+Notify.
+ // Shape: { [seasonIdx: number]: Set<episodeNumber> }
+ const wsBaselineRef = useRef<Record<number, Set<number>>>({});
+ // Auto-detected ranges shown in modal (read-only hint). Filled when Save+Notify is clicked.
+ const [wsAutoRanges, setWsAutoRanges] = useState<Array<{ seasonIdx: number; seasonName: string; startEp: number; endEp: number }>>([]);
+
+  // Movie Save + Notify modal state (mirrors series flow, but no season/episode)
+ const [mvSaveNotifyModal, setMvSaveNotifyModal] = useState(false);
+ const mvNotifyContextRef = useRef<{ movieId: string; form: any; parts?: any[]; addedParts?: number[] } | null>(null);
+
+ // ===== Movie PARTS state (mirrors seasons/episodes UX from Web Series) =====
+ type MoviePartEditor = { partNumber: number; title?: string; link: string; link480?: string; link720?: string; link1080?: string; link4k?: string };
+ const [mvPartsData, setMvPartsData] = useState<MoviePartEditor[]>([]);
+ const [mvPartsJsonImportMode, setMvPartsJsonImportMode] = useState(false);
+ const [mvJsonPasteText, setMvJsonPasteText] = useState("");
+ const mvJsonFileRef = useRef<HTMLInputElement | null>(null);
+ // Baseline: Set of partNumbers present when edit started (to detect newly-added parts on Save+Notify)
+ const mvPartsBaselineRef = useRef<Set<number>>(new Set());
+ const [mvPartsAutoRange, setMvPartsAutoRange] = useState<{ start: number; end: number } | null>(null);
+
+ const formatEpisodeRangeLabel = useCallback((seasonValue?: string | number, start?: string | number, end?: string | number) => {
+ const seasonText = String(seasonValue ?? "").trim() || "01";
+ const startText = String(start ?? "").trim() || "01";
+ const endText = String(end ?? "").trim();
+ return endText && endText !== startText
+ ? `Sá´‡á´€sá´É´ #${seasonText} â€¢ Eá´˜Éªsá´á´…á´‡ #${startText}-${endText} Aá´…á´…á´‡á´…`
+ : `Sá´‡á´€sá´É´ #${seasonText} â€¢ Eá´˜Éªsá´á´…á´‡ #${startText} Aá´…á´…á´‡á´…`;
+ }, []);
+
+ // Shared caption builder â€” one source of truth for preview + sender.
+ const buildTelegramCaption = useCallback((mode: "html" | "plain") => {
+  const footerLinksHtml = tgFooterLinks
+   .map(l => `à¹ ${l.emoji} <a href="${l.url}">${l.label}</a> ${l.emoji}`)
+   .join("\n");
+  const [epStart, epEnd] = String(tgNewEpAdded || "01").split("-").map(v => v.trim());
+  const vars: TgTemplateVars = {
+   title: tgTitle || "{title}",
+   season: tgSeason || "N/A",
+   totalEpisodes: tgTotalEpisodes || "N/A",
+   episodeLine: formatEpisodeRangeLabel(tgSeason, epStart, epEnd),
+   movieType: tgMovieType || "Full Movie",
+   quality: tgQuality || "N/A",
+   rating: tgRating || "N/A",
+   genres: tgGenres || "N/A",
+   languages: tgLanguages || "N/A",
+   dubTag: getTelegramDubTag(tgDubType),
+   status: tgStatus === "complete" ? "Cá´á´á´˜ÊŸá´‡á´›á´‡ âœ…" : "OÉ´É¢á´ÉªÉ´É¢ ğŸŸ¢",
+   hashtags: sanitizeTelegramHashtags(normalizeTelegramBaseHashtags(tgHashtags), tgTitle),
+   footerLinks: footerLinksHtml,
+   divider: TG_DIVIDER,
+   watchUrl: tgButtonLink || SITE_URL,
+   owner: `@${(tgOwnerUsername || DEFAULT_TG_OWNER_USERNAME).replace(/^@/, "")}`,
+  };
+  const template = tgContentKind === "movie" ? tgTemplateMovie : tgTemplateSeries;
+  const out = renderTelegramTemplate(template, vars);
+  return mode === "plain" ? stripTelegramHtml(out) : out;
+ }, [tgFooterLinks, tgNewEpAdded, tgTitle, tgSeason, tgTotalEpisodes, tgMovieType, tgQuality,
+     tgRating, tgGenres, tgLanguages, tgDubType, tgStatus, tgHashtags, tgButtonLink,
+     tgOwnerUsername, tgContentKind, tgTemplateMovie, tgTemplateSeries, formatEpisodeRangeLabel]);
+
+
+
+
+ useEffect(() => {
+ const connRef = ref(db, ".info/connected");
+ const unsub = onValue(connRef, (snap) => {
+ setFirebaseConnected(snap.val() === true);
+ });
+ return () => unsub();
+ }, []);
+
+ // PIN is verified server-side via the verify-admin-pin edge function
+ // (PIN is stored only as the ADMIN_PIN Lovable Cloud secret, never in
+ // Firebase RTDB which is world-readable to authenticated users).
+ useEffect(() => {
+ setPinExists(true);
+ setCurrentPin("");
+ }, []);
+
+ // Auto-verify stored admin session timestamp (PIN re-verification happens
+ // on each login submit â€” the session cookie just tracks expiry).
+ useEffect(() => {
+ if (isAuthenticated) {
+ try {
+ const stored = localStorage.getItem("rs_admin_session");
+ if (stored) {
+ const parsed = JSON.parse(stored);
+ if (Date.now() - (parsed.ts || 0) > 7 * 24 * 60 * 60 * 1000) {
+ setIsAuthenticated(false);
+ localStorage.removeItem("rs_admin_session");
+ localStorage.removeItem("rs_admin_google");
+ sessionStorage.removeItem("rs_admin_pin");
+ return;
+ }
+ }
+ } catch {
+ setIsAuthenticated(false);
+ localStorage.removeItem("rs_admin_session");
+ }
+  }
+ }, [isAuthenticated]);
+
+ // Subscribe to the global admin-logout marker. If an owner presses
+ // "Logout from all devices" in Security Center, every device whose local
+ // session was minted BEFORE that timestamp force-clears and reloads.
+ useEffect(() => {
+  if (!isAuthenticated) return;
+  const unsub = subscribeGlobalLogout((globalTs) => {
+   if (!globalTs) return;
+   try {
+    const raw = localStorage.getItem("rs_admin_session");
+    const parsed = raw ? JSON.parse(raw) : null;
+    const localTs = Number(parsed?.ts || 0);
+    if (localTs && localTs < globalTs) {
+     localStorage.removeItem("rs_admin_session");
+     localStorage.removeItem("rs_admin_google");
+     localStorage.removeItem("rs_admin_google_name");
+     sessionStorage.removeItem("rs_admin_pin");
+     setIsAuthenticated(false);
+     // Hard reload so any in-memory state is dropped.
+     setTimeout(() => window.location.reload(), 200);
+    }
+   } catch {}
+  });
+  return () => { try { unsub?.(); } catch {} };
+ }, [isAuthenticated]);
+
+
+
+
+ // Load saved Telegram channel
+ useEffect(() => {
+ const unsub = onValue(ref(db, "admin/telegramChannel"), (snap) => {
+ if (snap.val()) setTgChannelId(snap.val());
+ });
+ return () => unsub();
+ }, []);
+
+ useEffect(() => {
+  adminLoadContentListRef.current = loadAdminContentList;
+ }, [loadAdminContentList]);
+
+ // Load CORE data. Heavy content collections are loaded from a tiny admin index
+ // + a small recent window, never full onValue subscriptions. This stops Admin
+ // from downloading every season/episode/audio URL on every open.
+ useEffect(() => {
+ const unsubs: (() => void)[] = [];
+
+  unsubs.push(onValue(ref(db, "categories"), (snap) => {
+  startTransition(() => setCategoriesData(snap.val() || {}));
+  }));
+
+  // Heavy content list + counts are gated to sections that actually need them.
+  // See the `content-list` effect below. Keeping this shell empty here means
+  // sections like settings/analytics/egd-manager pay zero content-load cost.
+
+ unsubs.push(onValue(ref(db, "maintenance"), (snap) => {
+  const val = snap.val();
+  startTransition(() => {
+  setCurrentMaintenance(val);
+  setMaintenanceActive(!!val?.active);
+  });
+ }));
+
+ unsubs.push(onValue(ref(db, "globalFreeAccess"), (snap) => {
+  startTransition(() => setGlobalFreeAccess(snap.val() || null));
+ }));
+
+ unsubs.push(onValue(ref(db, "settings/tutorialLink"), (snap) => {
+ const val = snap.val() || "";
+  startTransition(() => { setTutorialLink(val); setTutorialLinkInput(val); });
+ }));
+
+ unsubs.push(onValue(ref(db, "settings/tutorialVideos"), (snap) => {
+ const val = snap.val();
+ if (val && typeof val === "object") {
+ const list = Object.entries(val).map(([k, v]: any) => ({ id: k, title: v.title || "", url: v.url || "" }));
+  startTransition(() => setTutorialVideos(list));
+ } else {
+  startTransition(() => setTutorialVideos([]));
+ }
+ }));
+
+ unsubs.push(onValue(ref(db, "admin"), (snap) => {
+ const val = snap.val() || {};
+ const targetConfig = typeof val === "object" ? val?.notificationTargets || {} : {};
+ const userIds = [...new Set([
+ typeof val === "string" ? val : "",
+ typeof val === "object" ? val?.userId || "" : "",
+ ...(Array.isArray(targetConfig?.userIds) ? targetConfig.userIds : []),
+ ].map((item) => String(item || "").trim()).filter((item): item is string => Boolean(item)))] as string[];
+ const tokens = [...new Set((Array.isArray(targetConfig?.tokens) ? targetConfig.tokens : [])
+ .map((item: any) => String(item || "").trim())
+ .filter((item): item is string => Boolean(item)))] as string[];
+  startTransition(() => {
+  setSavedAdminUserId(userIds.join("\n"));
+  setAdminUserIdInput(userIds.join("\n"));
+  setSavedAdminFcmTokens(tokens);
+  setAdminFcmTokensInput(tokens.join("\n"));
+  });
+ }));
+
+   return () => { unsubs.forEach(u => u()); };
+ }, []);
+
+ // ==================== GATED CONTENT LIST + COUNTS ====================
+ // Only the sections listed below actually need the full webseries/movies
+ // content index. Every other section (settings, analytics, egd-manager,
+ // cf-manager, security-center, task-manager, adsterra, backdrop-ai,
+ // apk-dw, live-tv, etc.) skips the Firebase index subscription entirely,
+ // eliminating the biggest source of admin-panel lag.
+ useEffect(() => {
+    const CONTENT_SECTIONS: Section[] = [
+      // Dashboard is included so the "Recent Content" strip paints instantly
+      // from the cached admin content index instead of showing an empty state
+      // on the very first admin visit.
+      "dashboard",
+      "webseries", "movies", "add-content", "tmdb-fetch", "telegram-post",
+      "animesalt-manager", "new-releases",
+      "comments", "hero-pinned", "url-changer", "link-checker", "auto-import",
+      "tg-url-changer", "analytics",
+    ];
+   const needsContent = CONTENT_SECTIONS.includes(activeSection);
+   const needsCounts = activeSection === "dashboard";
+   if (!needsContent && !needsCounts) return;
+
+   let cancelled = false;
+
+   if (needsCounts) {
+     Promise.all([
+       fetchAdminCount("webseries").catch(() => webseriesData.length),
+       fetchAdminCount("movies").catch(() => moviesData.length),
+       fetchAdminCount("users").catch(() => usersData.length),
+     ]).then(([webseries, movies, users]) => {
+       if (!cancelled) startTransition(() => setAdminFastCounts({ webseries, movies, users }));
+     });
+   }
+
+   if (needsContent) {
+      void loadAdminContentList("webseries");
+      void loadAdminContentList("movies");
+   }
+
+    return () => { cancelled = true; };
+   // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSection, loadAdminContentList]);
+
+ // Load full user records only in user-management sections. Dashboard totals use
+ // the shallow cached count above; this avoids downloading every profile on each
+ // Admin open. A short session cache also prevents repeat reads while navigating.
+ useEffect(() => {
+  const needsUsers = ["users", "free-access", "device-limits", "analytics"].includes(activeSection);
+ if (!needsUsers) return;
+
+  try {
+   const cached = JSON.parse(sessionStorage.getItem("rs_admin_users_cache_v1") || "null");
+   if (cached?.ts && Date.now() - Number(cached.ts) < 5 * 60 * 1000 && Array.isArray(cached.items)) {
+    setUsersData(cached.items);
+    const appCached = JSON.parse(sessionStorage.getItem("rs_admin_app_users_cache_v1") || "null");
+    if (appCached?.items) setAppUsersGlobal(appCached.items);
+    return;
+   }
+  } catch {}
+
+ const unsubs: (() => void)[] = [];
+
+ unsubs.push(onValue(ref(db, "users"), (snap) => {
+ const data = snap.val() || {};
+   const items = Object.entries(data).map(([id, user]: any) => ({ id, ...user }));
+   try { sessionStorage.setItem("rs_admin_users_cache_v1", JSON.stringify({ ts: Date.now(), items })); } catch {}
+   startTransition(() => setUsersData(items));
+ }));
+
+ unsubs.push(onValue(ref(db, "appUsers"), (snap) => {
+   const items = snap.val() || {};
+   try { sessionStorage.setItem("rs_admin_app_users_cache_v1", JSON.stringify({ ts: Date.now(), items })); } catch {}
+   startTransition(() => setAppUsersGlobal(items));
+ }));
+
+
+ return () => unsubs.forEach(u => u());
+ }, [activeSection]);
+
+ // Lazy-load NEW RELEASES data
+ useEffect(() => {
+ if (activeSection !== "new-releases" && activeSection !== "telegram-post") return;
+ const unsub = onValue(query(ref(db, "newEpisodeReleases"), limitToLast(300)), (snap) => {
+ const data = snap.val() || {};
+ const arr = Object.entries(data).map(([id, r]: any) => ({ id, ...r }));
+ arr.sort((a, b) => b.timestamp - a.timestamp);
+  startTransition(() => setReleasesData(arr));
+ });
+ return () => unsub();
+ }, [activeSection]);
+
+ // Lazy-load AnimeSalt selected data for content options
+ useEffect(() => {
+ if (activeSection !== "new-releases") return;
+ const unsub = onValue(ref(db, 'animesaltSelected'), (snap) => {
+  startTransition(() => setAnimesaltSelectedData(snap.val() || {}));
+ });
+ return () => unsub();
+ }, [activeSection]);
+
+ // Lazy-load REDEEM CODES data
+ useEffect(() => {
+ if (activeSection !== "redeem-codes") return;
+ const unsub = onValue(ref(db, "redeemCodes"), (snap) => {
+ const data = snap.val() || {};
+  startTransition(() => setRedeemCodesData(Object.entries(data).map(([id, item]: any) => ({ id, ...item }))));
+ });
+ return () => unsub();
+ }, [activeSection]);
+
+ // Lazy-load FREE ACCESS USERS data â€” merges freeAccessUsers + users/*/freeAccess (Mini App)
+ useEffect(() => {
+ if (activeSection !== "free-access") return;
+
+ // Instant render from cache
+ try {
+ const cached = sessionStorage.getItem("admin_freeAccessUsers_cache");
+ if (cached) setFreeAccessUsers(JSON.parse(cached));
+ } catch {}
+
+ let faData: Record<string, any> = {};
+ let usersData: Record<string, any> = {};
+ let usersLoaded = false;
+ let faLoaded = false;
+
+ const merge = () => {
+ if (!usersLoaded || !faLoaded) return;
+ const now = Date.now();
+ const map: Record<string, any> = {};
+
+ // 1) Direct freeAccessUsers entries (browser unlock + mini-app mirror)
+ Object.entries(faData || {}).forEach(([id, user]: [string, any]) => {
+ if (!user) return;
+ if (user.expiresAt > now) {
+ map[id] = { id, ...user };
+ } else {
+ remove(ref(db, `freeAccessUsers/${id}`)).catch(() => {});
+ }
+ });
+
+ // 2) Backfill from users/*/freeAccess (covers older Mini App users)
+ Object.entries(usersData || {}).forEach(([uid, u]: [string, any]) => {
+ const fa = u?.freeAccess;
+ if (!fa || !fa.active || !fa.expiresAt || fa.expiresAt <= now) return;
+ if (map[uid]) {
+ if (fa.suspiciousBypass === true) {
+ map[uid] = {
+ ...map[uid],
+ suspiciousBypass: true,
+ suspiciousBypassAt: fa.suspiciousBypassAt || 0,
+ };
+ }
+ return;
+ }
+ const isMini = fa.viaToken === "mini-app" || fa.viaToken === "mini-app-fallback" || (typeof fa.source === "string" && fa.source.includes("telegram"));
+ map[uid] = {
+ id: uid,
+ userId: uid,
+ name: u.name || u.username || (isMini ? `Telegram ${uid}` : "Unknown"),
+ email: u.email || "",
+ unlockedAt: fa.grantedAt || now,
+ expiresAt: fa.expiresAt,
+ prizeHours: Math.max(0, Math.floor((fa.expiresAt - (fa.grantedAt || now)) / 3600000)),
+ prizeMinutes: 0,
+ mode: isMini ? "miniapp" : "normal",
+ source: fa.source || fa.viaToken || "",
+ suspiciousBypass: fa.suspiciousBypass === true,
+ suspiciousBypassAt: fa.suspiciousBypassAt || 0,
+ };
+ });
+
+ const list = Object.values(map).sort((a: any, b: any) => b.unlockedAt - a.unlockedAt);
+  startTransition(() => setFreeAccessUsers(list));
+ try { sessionStorage.setItem("admin_freeAccessUsers_cache", JSON.stringify(list)); } catch {}
+ };
+
+ const unsub1 = onValue(ref(db, "freeAccessUsers"), (snap) => {
+ faData = snap.val() || {};
+ faLoaded = true;
+ merge();
+ });
+ const unsub2 = onValue(query(ref(db, "users"), limitToLast(1500)), (snap) => {
+ usersData = snap.val() || {};
+ usersLoaded = true;
+ merge();
+ });
+
+ return () => { unsub1(); unsub2(); };
+ }, [activeSection]);
+
+ const clearAllFreeAccess = async () => {
+ if (!confirm("Cancel all active free access?")) return;
+ setFreeAccessBusy("all");
+ try {
+ const usersSnap = await get(ref(db, "users"));
+ const usersVal = usersSnap.val() || {};
+ await Promise.all([
+ set(ref(db, "freeAccessUsers"), null),
+ ...Object.keys(usersVal).map((uid) => set(ref(db, `users/${uid}/freeAccess`), null).catch(() => {})),
+ ]);
+ toast.success("All free access has been canceled");
+ } catch (e: any) {
+ toast.error(e?.message || "Clear all failed");
+ } finally {
+ setFreeAccessBusy(null);
+ }
+ };
+
+ const clearSingleFreeAccess = async (user: any) => {
+ const uid = String(user?.userId || user?.id || "").trim();
+ if (!uid) return;
+ if (!confirm(`${user?.name || uid} free access should be canceled?`)) return;
+ setFreeAccessBusy(uid);
+ try {
+ await Promise.all([
+ remove(ref(db, `freeAccessUsers/${uid}`)).catch(() => {}),
+ set(ref(db, `users/${uid}/freeAccess`), null),
+ ]);
+ toast.success("Selected user's free access has been canceled");
+ } catch (e: any) {
+ toast.error(e?.message || "Remove failed");
+ } finally {
+ setFreeAccessBusy(null);
+ }
+ };
+
+ // Lazy-load PRIZE POOL data
+ useEffect(() => {
+ if (activeSection !== "free-access") return;
+ const unsub = onValue(ref(db, "prizePool"), (snap) => {
+ const data = snap.val() || {};
+ const list: any[] = [];
+ Object.entries(data).forEach(([id, item]: [string, any]) => {
+ list.push({ id, ...item });
+ });
+ list.sort((a, b) => (b.claimedAt || 0) - (a.claimedAt || 0));
+  startTransition(() => setPrizePoolUsers(list.slice(0, 250)));
+ });
+ return () => unsub();
+ }, [activeSection]);
+
+ // Lazy-load bKash settings & payment requests + SMS feed + global auto-matcher
+ const [bkashSmsFeed, setBkashSmsFeed] = useState<any[]>([]);
+ useEffect(() => {
+ if (activeSection !== "bkash-payments" && activeSection !== "dashboard") return;
+
+ // Instant render from sessionStorage cache (avoids 'loading forever' feel)
+ try {
+ const cs = sessionStorage.getItem("admin_bkashSettings_cache");
+ if (cs) { setBkashSettings(JSON.parse(cs)); setBkashSettingsLoaded(true); }
+ const cp = sessionStorage.getItem("admin_bkashPayments_cache");
+ if (cp) setBkashPaymentRequests(JSON.parse(cp));
+ const cf = sessionStorage.getItem("admin_bkashSmsFeed_cache");
+ if (cf) setBkashSmsFeed(JSON.parse(cf));
+ } catch {}
+
+ const unsubs: (() => void)[] = [];
+ unsubs.push(onValue(ref(db, "bkashSettings"), (snap) => {
+ const data = snap.val();
+ if (data) {
+  startTransition(() => setBkashSettings(data));
+ try { sessionStorage.setItem("admin_bkashSettings_cache", JSON.stringify(data)); } catch {}
+ }
+  startTransition(() => setBkashSettingsLoaded(true));
+ }));
+ unsubs.push(onValue(ref(db, "bkashPayments"), (snap) => {
+ const data = snap.val() || {};
+ const list = Object.entries(data).map(([id, item]: any) => ({ id, ...item })).sort((a: any, b: any) => (b.submittedAt || 0) - (a.submittedAt || 0));
+  startTransition(() => setBkashPaymentRequests(list.slice(0, 250)));
+ try { sessionStorage.setItem("admin_bkashPayments_cache", JSON.stringify(list.slice(0, 200))); } catch {}
+ }));
+ unsubs.push(onValue(ref(db, "XNXANIKPAY"), (snap) => {
+ const data = snap.val() || {};
+ const list = Object.entries(data).map(([txid, item]: any) => ({ txid, ...item }))
+ .sort((a: any, b: any) => (b.receivedAt || b.consumedAt || 0) - (a.receivedAt || a.consumedAt || 0));
+  startTransition(() => setBkashSmsFeed(list.slice(0, 150)));
+ try { sessionStorage.setItem("admin_bkashSmsFeed_cache", JSON.stringify(list.slice(0, 100))); } catch {}
+ }));
+ // ğŸ” Start GLOBAL auto-matcher while admin panel is open on bkash section
+ let stopMatcher: (() => void) | null = null;
+ if (activeSection === "bkash-payments") {
+ import("@/lib/bkashAutoMatcher").then(({ startGlobalAutoMatcher }) => {
+ stopMatcher = startGlobalAutoMatcher();
+ }).catch(() => {});
+ }
+ return () => {
+ unsubs.forEach(u => u());
+ if (stopMatcher) stopMatcher();
+ };
+ }, [activeSection]);
+
+ // Lazy-load COMMENTS data
+ useEffect(() => {
+ if (activeSection !== "comments") return;
+ const unsub = onValue(ref(db, "comments"), (snap) => {
+ const data = snap.val() || {};
+ const allComments: any[] = [];
+ Object.entries(data).forEach(([animeId, comments]: any) => {
+ Object.entries(comments || {}).forEach(([commentId, comment]: any) => {
+ const replies = comment.replies ? Object.entries(comment.replies).map(([rId, r]: any) => ({
+ id: rId, ...r
+ })) : [];
+ allComments.push({
+ id: commentId, animeId, ...comment, replies,
+ });
+ });
+ });
+ allComments.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+  startTransition(() => setCommentsData(allComments.slice(0, 500)));
+ });
+ return () => unsub();
+ }, [activeSection]);
+
+ // Lazy-load ANALYTICS data â€” fast subscription, deferred one-shot cleanup.
+ useEffect(() => {
+ if (activeSection !== "analytics") return;
+ const unsubs: (() => void)[] = [];
+ const today = new Date().toISOString().split("T")[0];
+
+ // Throttle setState so a rapid burst of Firebase updates doesn't trash React.
+ let viewsRaf: number | null = null;
+ let viewsPending: any = null;
+ const flushViews = () => {
+ viewsRaf = null;
+ if (viewsPending) {
+ setAnalyticsViews(viewsPending);
+ viewsPending = null;
+ }
+ };
+ unsubs.push(onValue(ref(db, "analytics/views"), (snap) => {
+ viewsPending = snap.val() || {};
+ if (viewsRaf == null) viewsRaf = requestAnimationFrame(flushViews);
+ }));
+ unsubs.push(onValue(ref(db, "analytics/activeViewers"), (snap) => {
+ setActiveViewers(snap.val() || {});
+ }));
+ unsubs.push(onValue(ref(db, "analytics/dailyActive"), (snap) => {
+ setDailyActiveUsers(snap.val() || {});
+ }));
+ unsubs.push(onValue(ref(db, "analytics/totals/views"), (snap) => {
+ setAllTimeTotals(snap.val() || {});
+ }));
+
+ // Defer cleanup completely off the render path â€” runs once when browser is idle.
+ const idle: any = (window as any).requestIdleCallback || ((fn: any) => setTimeout(fn, 2000));
+ const idleCancel: any = (window as any).cancelIdleCallback || clearTimeout;
+ const idleId = idle(async () => {
+ try {
+ const [vSnap, daSnap] = await Promise.all([
+ get(ref(db, "analytics/views")),
+ get(ref(db, "analytics/dailyActive")),
+ ]);
+ const v = vSnap.val() || {};
+ const d = daSnap.val() || {};
+ // Keep last 7 days of daily analytics â€” anything older is pruned.
+ // Per-anime totals live at analytics/totals/views (never pruned).
+ const keep = new Set<string>();
+ for (let i = 0; i < 7; i++) {
+ const dt = new Date();
+ dt.setDate(dt.getDate() - i);
+ keep.add(dt.toISOString().split("T")[0]);
+ }
+ const ops: Array<() => Promise<any>> = [];
+ Object.entries(v).forEach(([animeId, byDate]: any) => {
+ if (!byDate || typeof byDate !== "object") return;
+ Object.keys(byDate).forEach((dk) => {
+ if (!keep.has(dk)) ops.push(() => remove(ref(db, `analytics/views/${animeId}/${dk}`)));
+ });
+ });
+ Object.keys(d).forEach((dk) => {
+ if (!keep.has(dk)) ops.push(() => remove(ref(db, `analytics/dailyActive/${dk}`)));
+ });
+ // Fire in small batches so the UI stays smooth.
+ for (let i = 0; i < ops.length; i += 20) {
+ await Promise.all(ops.slice(i, i + 20).map(fn => fn().catch(() => {})));
+ await new Promise(r => setTimeout(r, 0));
+ }
+ } catch {}
+ }, { timeout: 5000 });
+
+ return () => {
+ unsubs.forEach(u => u());
+ if (viewsRaf != null) cancelAnimationFrame(viewsRaf);
+ try { idleCancel(idleId); } catch {}
+ };
+ }, [activeSection]);
+
+
+ // Close dropdowns on outside click
+ useEffect(() => {
+ const handleClick = (e: MouseEvent) => {
+ if (notifDropdownRef.current && !notifDropdownRef.current.contains(e.target as Node)) setNotifDropdownOpen(false);
+ if (releaseDropdownRef.current && !releaseDropdownRef.current.contains(e.target as Node)) setReleaseDropdownOpen(false);
+ };
+ document.addEventListener("mousedown", handleClick);
+ return () => document.removeEventListener("mousedown", handleClick);
+ }, []);
+
+ // Section history stack for back navigation
+ const [sectionHistory, setSectionHistory] = useState<Section[]>(["dashboard"]);
+ const savedScrollPos = useRef<number>(0);
+
+ const showSection = (section: Section) => {
+ setSectionHistory(prev => [...prev, section]);
+ setActiveSection(section);
+ setSidebarOpen(false);
+ setDropdownOpen(false);
+ };
+
+ const handleAdminBack = useCallback(() => {
+ // If in add/edit sub-tab, go back to list first and restore scroll
+ if (activeSection === "webseries" && (seriesTab === "ws-add" || seriesTab === "ws-manual")) {
+ setSeriesTab("ws-list");
+ setSeriesEditId("");
+ setTimeout(() => window.scrollTo({ top: savedScrollPos.current, behavior: "instant" as ScrollBehavior }), 50);
+ return true;
+ }
+ if (activeSection === "movies" && (moviesTab === "mv-add" || moviesTab === "mv-manual")) {
+ setMoviesTab("mv-list");
+ setMovieEditId("");
+ setTimeout(() => window.scrollTo({ top: savedScrollPos.current, behavior: "instant" as ScrollBehavior }), 50);
+ return true;
+ }
+ if (sectionHistory.length > 1) {
+ const newHistory = [...sectionHistory];
+ newHistory.pop();
+ const prevSection = newHistory[newHistory.length - 1];
+ setSectionHistory(newHistory);
+ setActiveSection(prevSection);
+ return true;
+ }
+ return false;
+ }, [sectionHistory, activeSection, seriesTab, moviesTab]);
+
+ // Mobile back button handler for admin
+ useEffect(() => {
+ if (!isAuthenticated) return;
+ window.history.pushState({ rsAdmin: true }, "");
+ const onPopState = () => {
+ window.history.pushState({ rsAdmin: true }, "");
+ const handled = handleAdminBack();
+ if (!handled) {
+ // Go back to main site
+ window.location.href = "/";
+ }
+ };
+ window.addEventListener("popstate", onPopState);
+ return () => window.removeEventListener("popstate", onPopState);
+ }, [isAuthenticated, handleAdminBack]);
+
+ const formatTime = (ts: number) => {
+ if (!ts) return "";
+ const diff = Date.now() - ts;
+ if (diff < 60000) return "Just now";
+ if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+ if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+ if (diff < 604800000) return `${Math.floor(diff / 86400000)}d ago`;
+ return new Date(ts).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+ };
+
+ const sectionTitles: Record<Section, string> = {
+ dashboard: "Dashboard",
+ categories: "Categories",
+ webseries: "Web Series",
+ "weekly-episode": "Weekly Episode",
+ movies: "Movies",
+ users: "Users",
+ "new-releases": "New Releases",
+ "tmdb-fetch": "TMDB Fetch",
+ "add-content": "Add Content",
+ "redeem-codes": "Redeem Codes",
+ maintenance: "Server Maintenance",
+ "free-access": "Free Access Users",
+ settings: "Settings",
+ comments: "Comments",
+ analytics: "Analytics & Views",
+ "auto-import": "Auto Import",
+ "animesalt-manager": "AnimeSalt Manager",
+ "bkash-payments": "bKash Payments",
+ "premium-users": "Premium Users",
+ "device-limits": "Device Limits",
+ "telegram-post": "Telegram Post",
+ "live-support": "Live Support",
+ "ui-themes": "UI Themes",
+ "hero-pinned": "Hero Pinned Posts",
+ "edge-router": "Edge Function Router",
+ "branding": "UI+AD Branding",
+ "ai-config": "AI Chat Config",
+ "live-tv": "Live TV Channels",
+ "url-changer": "URL Changer",
+ "link-checker": "Link Checker",
+ "tg-url-changer": "TG URL Changer",
+ "video-servers": "Video Servers",
+ "unlock-duration": "Unlock Duration",
+ "email-service": "Email Service",
+ 
+ "apk-dw": "APK Download Center",
+ "egd-manager": "EGD MANAGER",
+ "cf-manager": "CLOUDFLARE MANAGER",
+ "fb-analytics": "Firebase Analytics",
+  "adsterra": "Adsterra Ads",
+  "backdrop-ai": "Backdrop AI Replacer",
+  "security-center": "Security & Access",
+  "task-manager": "Daily Task Manager",
+  
+  };
+
+
+ // ==================== CATEGORIES ====================
+ const saveCategory = () => {
+ if (!categoryInput.trim()) { toast.error("Please enter category name"); return; }
+ push(ref(db, "categories"), { name: categoryInput.trim(), createdAt: Date.now() })
+ .then(() => { toast.success("Category saved!"); setCategoryInput(""); })
+ .catch(err => toast.error("Error: " + err.message));
+ };
+
+ const editCategory = (id: string, oldName: string) => {
+ const newName = prompt("Edit category name:", oldName);
+ if (newName && newName.trim() && newName !== oldName) {
+ update(ref(db, `categories/${id}`), { name: newName.trim(), updatedAt: Date.now() })
+ .then(() => toast.success("Category updated!"))
+ .catch(err => toast.error("Error: " + err.message));
+ }
+ };
+
+ const deleteCategory = (id: string) => {
+ if (confirm("Delete this category?")) {
+ remove(ref(db, `categories/${id}`))
+ .then(() => toast.success("Category deleted!"))
+ .catch(err => toast.error("Error: " + err.message));
+ }
+ };
+
+ // ==================== TMDB SEARCH ====================
+ const searchTMDBSeries = async () => {
+ if (!seriesSearch.trim()) { toast.error("Please enter search query"); return; }
+ setFetchingOverlay(true);
+ try {
+ const res = await fetch(`${TMDB_BASE_URL}/search/tv?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(seriesSearch)}`);
+ const data = await res.json();
+ if (data.results?.length > 0) {
+ setSeriesResults(data.results.slice(0, 9));
+ } else {
+ toast.error("No results found");
+ }
+ } catch { toast.error("Error searching TMDB"); }
+ finally { setFetchingOverlay(false); }
+ };
+
+  const fetchSeriesDetails = async (id: number) => {
+  // Check if this TMDB ID already exists â†’ jump straight to Edit page.
+  const existing = webseriesData.find(s => s.tmdbId === id || s.tmdbId === String(id));
+  if (existing) {
+   toast.warning(`"${existing.title}" is already added â€” opening edit page`, { duration: 4000 });
+   editSeries(existing.id);
+   setSeriesResults([]);
+   setSeriesSearch("");
+   return;
+  }
+
+ setFetchingOverlay(true);
+ try {
+ const res = await fetch(`${TMDB_BASE_URL}/tv/${id}?api_key=${TMDB_API_KEY}&append_to_response=credits,videos,images`);
+ const data = await res.json();
+ if (data.success === false) throw new Error("Not found");
+
+ let trailerUrl = "";
+ if (data.videos?.results) {
+ const trailer = data.videos.results.find((v: any) => v.type === "Trailer" && v.site === "YouTube");
+ if (trailer) trailerUrl = `https://www.youtube.com/watch?v=${trailer.key}`;
+ }
+ let logoUrl = "";
+ if (data.images?.logos?.length > 0) {
+ const logo = data.images.logos.find((l: any) => l.iso_639_1 === "en") || data.images.logos[0];
+ logoUrl = TMDB_IMG_BASE + "w500" + logo.file_path;
+ }
+ const cast = data.credits?.cast?.slice(0, 10).map((c: any) => ({
+ name: c.name, character: c.character, photo: c.profile_path ? TMDB_IMG_BASE + "w185" + c.profile_path : ""
+ })) || [];
+
+ // Auto-match TMDB genres with existing categories
+ const catNames = Object.values(categoriesData).map((c: any) => c.name?.toLowerCase() || "");
+ let autoCategory = "";
+ if (data.genres) {
+ for (const genre of data.genres) {
+ const gName = (genre.name || "").toLowerCase();
+ const matchIdx = catNames.findIndex(cn => cn.includes(gName) || gName.includes(cn.split(" / ")[0]) || gName.includes(cn.split("/")[0]?.trim()));
+ if (matchIdx >= 0) {
+ autoCategory = Object.values(categoriesData)[matchIdx]?.name || "";
+ break;
+ }
+ }
+ }
+
+ const nextSeriesForm = {
+ tmdbId: data.id, title: data.name || "", logo: logoUrl, poster: data.poster_path ? TMDB_IMG_BASE + "original" + data.poster_path : "",
+ backdrop: data.backdrop_path ? TMDB_IMG_BASE + "original" + data.backdrop_path : "", trailer: trailerUrl,
+ year: data.first_air_date?.split("-")[0] || "", rating: data.vote_average?.toFixed(1) || "",
+ language: "Hindi", baseLanguage: "Hindi", selectedAdminLanguage: "Hindi", availableLanguages: ["Hindi"], category: autoCategory, dubType: "official", storyline: data.overview || "", visibility: "public", weeklyEnabled: false, weeklyEveryDays: 7, audioTracks: []
+ };
+ if (autoCategory) toast.info(`auto Category: ${autoCategory}`);
+ setSeriesCast(cast);
+ setSeriesResults([]);
+ setSeriesEditId("");
+
+ // Set seasons with episode names from TMDB
+ const newSeasons: Season[] = [];
+ if (data.seasons) {
+ for (const season of data.seasons.filter((s: any) => s.season_number > 0)) {
+ try {
+ const seasonRes = await fetch(`${TMDB_BASE_URL}/tv/${data.id}/season/${season.season_number}?api_key=${TMDB_API_KEY}&language=en-US`);
+ const seasonDetail = seasonRes.ok ? await seasonRes.json() : null;
+ const episodes = seasonDetail?.episodes || [];
+ const epCount = episodes.length > 0 ? Math.max(season.episode_count, episodes.length) : season.episode_count;
+ newSeasons.push({
+ name: season.name, seasonNumber: season.season_number,
+ episodes: Array(epCount).fill(null).map((_, i) => ({
+ episodeNumber: i + 1,
+ title: episodes[i]?.name || `Episode ${i + 1}`,
+ link: "",
+ audioTracks: []
+ }))
+ });
+ } catch {
+ newSeasons.push({
+ name: season.name, seasonNumber: season.season_number,
+ episodes: Array(season.episode_count).fill(null).map((_, i) => ({
+ episodeNumber: i + 1, title: `Episode ${i + 1}`, link: "", audioTracks: []
+ }))
+ });
+ }
+ }
+ }
+ const nextMap = { Hindi: cloneSeasonList(newSeasons) };
+ setSeriesForm(syncSeriesLanguageSummary(nextSeriesForm, nextMap));
+ setSeriesSeasonsByLanguage(nextMap);
+ setSeasonsData(cloneSeasonList(newSeasons));
+ toast.success("Series details fetched! (episode names loaded from TMDB)");
+ } catch (err: any) { toast.error("Error: " + err.message); }
+ finally { setFetchingOverlay(false); }
+ };
+
+ // Ref to store last saved series ID (for Save+Notify on new series)
+ const lastSavedSeriesIdRef = useRef<string>("");
+
+ const saveSeries = async () => {
+ if (!seriesForm) return;
+ if (!seriesForm.title) { toast.error("Please enter title"); return; }
+ if (!seriesForm.category) { toast.error("Please select category"); return; }
+  setAdminBusyTask("Saving seriesâ€¦");
+  await yieldAdminFrame();
+
+ const nextMap = sanitizeSeasonLanguageMap({
+ ...seriesSeasonsByLanguage,
+ [normalizeLanguageValue(seriesForm?.selectedAdminLanguage || seriesForm?.baseLanguage || seriesForm?.language || "Hindi") || "Hindi"]: cloneSeasonList(seasonsData),
+ });
+ const syncedForm = syncSeriesLanguageSummary(seriesForm, nextMap);
+ setSeriesForm(syncedForm);
+ const data: any = {
+ ...syncedForm,
+ cast: seriesCast,
+ audioTracks: Array.isArray(syncedForm.audioTracks)
+ ? syncedForm.audioTracks.filter((track: any) => String(track?.label || track?.language || track?.link || "").trim())
+ : [],
+ seasons: cloneSeasonList(
+ (nextMap[syncedForm.baseLanguage || "Hindi"]?.length ? nextMap[syncedForm.baseLanguage || "Hindi"] : null)
+ || Object.values(nextMap).find((list: any) => Array.isArray(list) && list.some((s: any) => Array.isArray(s?.episodes) && s.episodes.length > 0))
+ || Object.values(nextMap).find((list: any) => Array.isArray(list) && list.length > 0)
+ || [],
+ ),
+
+ seasonsByLanguage: nextMap,
+ type: "webseries",
+ weeklyEnabled: seriesForm.weeklyEnabled === true,
+ weeklyEveryDays: Math.max(1, Number(seriesForm.weeklyEveryDays) || 7),
+ visibility: seriesForm.visibility === "private" ? "private" : "public",
+ // Per-series Telegram custom button (auto-attached by telegram-post edge function)
+ telegramCustomButton: (seriesForm.telegramCustomButtonText && seriesForm.telegramCustomButtonUrl)
+ ? { text: String(seriesForm.telegramCustomButtonText).trim(), url: String(seriesForm.telegramCustomButtonUrl).trim() }
+ : null,
+ updatedAt: Date.now(),
+ };
+ const isAnSeriesSave = !!(syncedForm?.anSlug || syncedForm?.animeSaltSlug || /animesalt/i.test(String(syncedForm?.sourceName || "")));
+ if (isAnSeriesSave) {
+ const normalizedSeasons = cloneSeasonList(seasonsData);
+ const anLanguages = new Set<string>();
+ normalizedSeasons.forEach((season: any) => {
+ (Array.isArray(season?.episodes) ? season.episodes : []).forEach((ep: any) => {
+ ep.audioTracks = normalizeAudioTrackList(ep.audioTracks);
+ const defaultTrack = ep.audioTracks.find((track: any) => track?.isDefault) || ep.audioTracks[0] || null;
+ ep.defaultAudio = defaultTrack ? { ...defaultTrack, isDefault: true } : null;
+ if (ep.defaultAudio) ep.audioTracks = ep.audioTracks.map((track: any) => ({ ...track, isDefault: track === defaultTrack }));
+ ep.qualityLinks = {
+ default: ep.link || ep.link1080 || ep.link720 || ep.link480 || "",
+ p480: ep.link480 || "",
+ p720: ep.link720 || "",
+ p1080: ep.link1080 || ep.link || "",
+ p4k: ep.link4k || "",
+ };
+ ep.audioTracks.forEach((track: any) => {
+ const label = normalizeLanguageValue(track?.label || track?.language);
+ if (label) anLanguages.add(label);
+ });
+ });
+ });
+ const orderedAnLanguages = Array.from(anLanguages);
+ const anBaseLanguage = orderedAnLanguages[0] || syncedForm.baseLanguage || "Multi";
+ data.seasons = normalizedSeasons;
+ data.seasonsByLanguage = { [anBaseLanguage]: normalizedSeasons };
+ data.baseLanguage = anBaseLanguage;
+ data.selectedAdminLanguage = anBaseLanguage;
+ data.availableLanguages = orderedAnLanguages.length ? orderedAnLanguages : [anBaseLanguage];
+ data.language = orderedAnLanguages.length > 2 ? "Multiple" : orderedAnLanguages.length === 2 ? "Dual" : anBaseLanguage;
+ data.audioTracks = orderedAnLanguages.map((lang) => ({ language: lang, label: lang, link: "" }));
+ data.source = "animesalt";
+ data.sourceName = "AnimeSalt";
+ }
+ setSeriesSeasonsByLanguage(isAnSeriesSave ? data.seasonsByLanguage : nextMap);
+  let saveRef;
+  let newId = seriesEditId || "";
+  if (seriesEditId) {
+  saveRef = ref(db, `webseries/${seriesEditId}`);
+  // Preserve original createdAt on edit â€” `set()` replaces the whole node,
+  // so without this the createdAt would be wiped and the item would lose its
+  // "recent" ranking after refresh.
+  try {
+    const priorSnap = await get(ref(db, `webseries/${seriesEditId}/createdAt`));
+    const priorCreatedAt = Number(priorSnap.val() || 0);
+    data.createdAt = priorCreatedAt || Date.now();
+  } catch {
+    data.createdAt = Date.now();
+  }
+  } else {
+  saveRef = push(ref(db, "webseries"));
+  newId = saveRef.key || "";
+  data.createdAt = Date.now();
+  }
+   data.updatedAt = Date.now(); // stamp so the recently-edited card stays at the top
+   lastSavedSeriesIdRef.current = newId;
+   try {
+   await set(saveRef, data);
+   upsertAdminContentListItem("webseries", newId, data);
+   await upsertAdminContentIndex("webseries", newId, data).catch(() => {});
+ toast.success(seriesEditId ? "Series updated!" : "Series saved!");
+ // Weekly EP feature removed â€” no sync needed
+  startTransition(() => { setSeriesForm(null); setSeasonsData([]); setSeriesCast([]); setSeriesEditId(""); setSeriesTab("ws-list"); setEpisodeRenderLimits({}); });
+  return newId;
+  } catch (err: any) {
+  toast.error("Error: " + err.message);
+  } finally {
+  setAdminBusyTask(null);
+  }
+ };
+
+ const editSeries = async (id: string) => {
+ savedScrollPos.current = window.scrollY;
+ const item = await getFullAdminContentItem("webseries", id);
+ const data = item ? { ...item } : null;
+ if (!data) return;
+ const loadedMap = sanitizeSeasonLanguageMap(data.seasonsByLanguage && typeof data.seasonsByLanguage === "object"
+ ? data.seasonsByLanguage
+ : { [data.baseLanguage || data.language || "Hindi"]: data.seasons || [] });
+ const initialLanguage = normalizeLanguageValue(data.selectedAdminLanguage || data.baseLanguage || data.language || "Hindi") || "Hindi";
+ const loadedSeasons = cloneSeasonList(loadedMap[initialLanguage] || loadedMap[data.baseLanguage || data.language || "Hindi"] || []);
+ setSeriesForm(syncSeriesLanguageSummary({
+ tmdbId: data.tmdbId || "", title: data.title || "", logo: data.logo || "", poster: data.poster || "",
+ backdrop: data.backdrop || "", trailer: data.trailer || "", year: data.year || "", rating: data.rating || "",
+  anSlug: data.anSlug || "", animeSaltSlug: data.animeSaltSlug || "", source: data.source || "", sourceName: data.sourceName || "", displayAs: data.displayAs || "",
+ language: data.language || "Hindi", baseLanguage: data.baseLanguage || data.language || "Hindi", selectedAdminLanguage: data.selectedAdminLanguage || data.baseLanguage || data.language || "Hindi", availableLanguages: Array.isArray(data.availableLanguages) ? data.availableLanguages : [], category: data.category || "", dubType: data.dubType || "official", storyline: data.storyline || "", visibility: data.visibility || "public",
+ weeklyEnabled: data.weeklyEnabled === true, weeklyEveryDays: Math.max(1, Number(data.weeklyEveryDays) || 7), weeklyDaysSinceLast: 0,
+ telegramCustomButtonText: data.telegramCustomButton?.text || "",
+ telegramCustomButtonUrl: data.telegramCustomButton?.url || "",
+ audioTracks: Array.isArray(data.audioTracks) ? data.audioTracks : data.audioTracks ? Object.values(data.audioTracks) : [],
+ }, loadedMap));
+ setSeriesCast(data.cast || []);
+ setSeriesSeasonsByLanguage(loadedMap);
+ setSeasonsData(loadedSeasons);
+ // Auto-expand only the LATEST (running) season; collapse earlier finished seasons
+ {
+ const latestIdx = Math.max(0, loadedSeasons.length - 1);
+ const expandMap: Record<number, boolean> = {};
+ if (loadedSeasons.length > 0) expandMap[latestIdx] = true;
+ setExpandedSeasons(expandMap);
+  setEpisodeRenderLimits({ [latestIdx]: 50 });
+ }
+ // Snapshot baseline episodes per season for auto-detect on Save+Notify
+ {
+ const base: Record<number, Set<number>> = {};
+ (data.seasons || []).forEach((s: any, i: number) => {
+ base[i] = new Set((s.episodes || []).map((e: any) => Number(e.episodeNumber || 0)).filter((n: number) => n > 0));
+ });
+ wsBaselineRef.current = base;
+ }
+ setSeriesEditId(id);
+ setActiveSection("webseries");
+ setSeriesTab("ws-add");
+ toast.info("Editing: " + data.title);
+ // Auto-scroll to Seasons & Episodes section for quick episode editing
+ setTimeout(() => {
+ document.getElementById("seasons-episodes-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+ }, 250);
+ };
+
+ const deleteSeries = (id: string) => {
+ if (confirm("Delete this series?")) {
+ remove(ref(db, `webseries/${id}`)).then(async () => {
+ removeAdminContentListItem("webseries", id);
+ await removeAdminContentIndex("webseries", id).catch(() => {});
+ toast.success("Deleted!");
+ }).catch(err => toast.error("Error: " + err.message));
+ }
+ };
+
+ const updateSeriesVisibility = async (id: string, visibility: "public" | "private") => {
+ try {
+ await update(ref(db, `webseries/${id}`), { visibility, updatedAt: Date.now() });
+ toast.success(visibility === "private" ? "Series moved to Private" : "Series moved to Public");
+ } catch (err: any) {
+ toast.error("Error: " + err.message);
+ }
+ };
+
+ // ==================== MOVIES ====================
+ const searchTMDBMovies = async () => {
+ if (!movieSearch.trim()) { toast.error("Please enter search query"); return; }
+ setFetchingOverlay(true);
+ try {
+ const res = await fetch(`${TMDB_BASE_URL}/search/movie?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(movieSearch)}`);
+ const data = await res.json();
+ if (data.results?.length > 0) { setMovieResults(data.results.slice(0, 9)); }
+ else { toast.error("No results found"); }
+ } catch { toast.error("Error searching TMDB"); }
+ finally { setFetchingOverlay(false); }
+ };
+
+  const fetchMovieDetails = async (id: number) => {
+  // Check if this TMDB ID already exists â†’ jump straight to Edit page.
+  const existing = moviesData.find(m => m.tmdbId === id || m.tmdbId === String(id));
+  if (existing) {
+   toast.warning(`"${existing.title}" is already added â€” opening edit page`, { duration: 4000 });
+   editMovie(existing.id);
+   setMovieResults([]);
+   setMovieSearch("");
+   return;
+  }
+
+ setFetchingOverlay(true);
+ try {
+ const res = await fetch(`${TMDB_BASE_URL}/movie/${id}?api_key=${TMDB_API_KEY}&append_to_response=credits,videos,images`);
+ const data = await res.json();
+ if (data.success === false) throw new Error("Not found");
+
+ let trailerUrl = "";
+ if (data.videos?.results) {
+ const trailer = data.videos.results.find((v: any) => v.type === "Trailer" && v.site === "YouTube");
+ if (trailer) trailerUrl = `https://www.youtube.com/watch?v=${trailer.key}`;
+ }
+ let logoUrl = "";
+ if (data.images?.logos?.length > 0) {
+ const logo = data.images.logos.find((l: any) => l.iso_639_1 === "en") || data.images.logos[0];
+ logoUrl = TMDB_IMG_BASE + "w500" + logo.file_path;
+ }
+ const cast = data.credits?.cast?.slice(0, 10).map((c: any) => ({
+ name: c.name, character: c.character, photo: c.profile_path ? TMDB_IMG_BASE + "w185" + c.profile_path : ""
+ })) || [];
+
+ // Auto-match TMDB genres with existing categories
+ const catNames = Object.values(categoriesData).map((c: any) => c.name?.toLowerCase() || "");
+ let autoCategory = "";
+ if (data.genres) {
+ for (const genre of data.genres) {
+ const gName = (genre.name || "").toLowerCase();
+ const matchIdx = catNames.findIndex(cn => cn.includes(gName) || gName.includes(cn.split(" / ")[0]) || gName.includes(cn.split("/")[0]?.trim()));
+ if (matchIdx >= 0) {
+ autoCategory = Object.values(categoriesData)[matchIdx]?.name || "";
+ break;
+ }
+ }
+ }
+
+ setMovieForm({
+ tmdbId: data.id, title: data.title || "", logo: logoUrl, poster: data.poster_path ? TMDB_IMG_BASE + "original" + data.poster_path : "",
+ backdrop: data.backdrop_path ? TMDB_IMG_BASE + "original" + data.backdrop_path : "", trailer: trailerUrl,
+ year: data.release_date?.split("-")[0] || "", rating: data.vote_average?.toFixed(1) || "",
+ language: "Hindi", category: autoCategory, dubType: "official", storyline: data.overview || "", movieLink: "", downloadLink: "", visibility: "public", audioTracks: []
+ });
+ if (autoCategory) toast.info(`auto Category: ${autoCategory}`);
+  setMovieCast(cast);
+ setMvPartsData([{ partNumber: 1, title: "", link: "", link480: "", link720: "", link1080: "", link4k: "" }]);
+ mvPartsBaselineRef.current = new Set();
+ setMovieResults([]);
+ setMovieEditId("");
+ toast.success("Movie details fetched!");
+ } catch (err: any) { toast.error("Error: " + err.message); }
+ finally { setFetchingOverlay(false); }
+ };
+
+ const saveMovie = async () => {
+ if (!movieForm) return;
+ if (!movieForm.title) { toast.error("Please enter title"); return; }
+ if (!movieForm.category) { toast.error("Please select category"); return; }
+  {
+    const nonEmptyParts = (mvPartsData || []).filter(p => (p.link || p.link480 || p.link720 || p.link1080 || p.link4k));
+    if (nonEmptyParts.length === 0) { toast.error("Please add at least one part with a default link"); return; }
+  }
+  setAdminBusyTask("Saving movieâ€¦");
+  await yieldAdminFrame();
+
+  const data = {
+  ...movieForm,
+  cast: movieCast,
+  audioTracks: Array.isArray(movieForm.audioTracks)
+  ? movieForm.audioTracks.filter((track: any) => String(track?.label || track?.language || track?.link || "").trim())
+  : [],
+  // Movie Parts: drop empty entries, keep only parts that have at least one URL
+  parts: (mvPartsData || [])
+    .filter(p => (p.link || p.link480 || p.link720 || p.link1080 || p.link4k))
+    .map((p, i) => ({ partNumber: Number(p.partNumber) || i + 1, title: p.title || `Part ${i + 1}`, link: p.link || "", link480: p.link480 || "", link720: p.link720 || "", link1080: p.link1080 || "", link4k: p.link4k || "" })),
+  type: "movie",
+  visibility: movieForm.visibility === "private" ? "private" : "public",
+  telegramCustomButton: (movieForm.telegramCustomButtonText && movieForm.telegramCustomButtonUrl)
+  ? { text: String(movieForm.telegramCustomButtonText).trim(), url: String(movieForm.telegramCustomButtonUrl).trim() }
+  : null,
+  updatedAt: Date.now(),
+  };
+  let saveRef;
+  let newMovieId = movieEditId || "";
+  if (movieEditId) {
+  saveRef = ref(db, `movies/${movieEditId}`);
+  // Preserve original createdAt on edit (see saveSeries for rationale).
+  try {
+    const priorSnap = await get(ref(db, `movies/${movieEditId}/createdAt`));
+    const priorCreatedAt = Number(priorSnap.val() || 0);
+    data.createdAt = priorCreatedAt || Date.now();
+  } catch {
+    data.createdAt = Date.now();
+  }
+  } else {
+  saveRef = push(ref(db, "movies"));
+   newMovieId = saveRef.key || "";
+  data.createdAt = Date.now();
+   }
+   data.updatedAt = Date.now(); // stamp so the recently-edited card stays at the top
+   try {
+  await set(saveRef, data);
+  upsertAdminContentListItem("movies", newMovieId, data);
+  await upsertAdminContentIndex("movies", newMovieId, data).catch(() => {});
+ toast.success(movieEditId ? "Movie updated!" : "Movie saved!");
+  startTransition(() => { setMovieForm(null); setMovieCast([]); setMvPartsData([]); mvPartsBaselineRef.current = new Set(); setMovieEditId(""); setMoviesTab("mv-list"); });
+  return newMovieId;
+  } catch (err: any) {
+  toast.error("Error: " + err.message);
+  } finally {
+  setAdminBusyTask(null);
+  }
+ };
+
+ const editMovie = async (id: string) => {
+ savedScrollPos.current = window.scrollY;
+ const item = await getFullAdminContentItem("movies", id);
+ const data = item ? { ...item } : null;
+ if (!data) return;
+ setMovieForm({
+ tmdbId: data.tmdbId || "", title: data.title || "", logo: data.logo || "", poster: data.poster || "",
+ backdrop: data.backdrop || "", trailer: data.trailer || "", year: data.year || "", rating: data.rating || "",
+ language: data.language || "Hindi", category: data.category || "", dubType: data.dubType || "official", storyline: data.storyline || "",
+ movieLink: data.movieLink || "", downloadLink: data.downloadLink || "",
+ movieLink480: data.movieLink480 || "", movieLink720: data.movieLink720 || "",
+ movieLink1080: data.movieLink1080 || "", movieLink4k: data.movieLink4k || "", visibility: data.visibility || "public",
+ telegramCustomButtonText: data.telegramCustomButton?.text || "",
+ telegramCustomButtonUrl: data.telegramCustomButton?.url || "",
+ audioTracks: Array.isArray(data.audioTracks) ? data.audioTracks : data.audioTracks ? Object.values(data.audioTracks) : [],
+ });
+  setMovieCast(data.cast || []);
+ // Hydrate movie parts (if any) + snapshot baseline for Save+Notify diffing.
+ // Backwards-compat: if the movie has no parts but has legacy top-level links,
+ // hoist them into a single "Main" part so the new parts-only editor works.
+ {
+   const rawParts = Array.isArray(data.parts) ? data.parts : (data.parts && typeof data.parts === "object" ? Object.values(data.parts) : []);
+   let hydrated: MoviePartEditor[] = (rawParts as any[])
+     .map((p: any, i: number) => ({
+       partNumber: Number(p?.partNumber || p?.number || i + 1) || i + 1,
+       title: p?.title || "",
+       link: p?.link || "",
+       link480: p?.link480 || "",
+       link720: p?.link720 || "",
+       link1080: p?.link1080 || "",
+       link4k: p?.link4k || "",
+     }))
+     .sort((a, b) => (a.partNumber || 0) - (b.partNumber || 0));
+   if (hydrated.length === 0 && (data.movieLink || data.movieLink480 || data.movieLink720 || data.movieLink1080 || data.movieLink4k)) {
+     hydrated = [{
+       partNumber: 1,
+       title: "",
+       link: data.movieLink || "",
+       link480: data.movieLink480 || "",
+       link720: data.movieLink720 || "",
+       link1080: data.movieLink1080 || "",
+       link4k: data.movieLink4k || "",
+     }];
+   }
+   if (hydrated.length === 0) {
+     hydrated = [{ partNumber: 1, title: "", link: "", link480: "", link720: "", link1080: "", link4k: "" }];
+   }
+   setMvPartsData(hydrated);
+   mvPartsBaselineRef.current = new Set(hydrated.map(p => Number(p.partNumber || 0)).filter(n => n > 0));
+ }
+ setMovieEditId(id);
+ setActiveSection("movies");
+ setMoviesTab("mv-add");
+ toast.info("Editing: " + data.title);
+ };
+
+ const deleteMovie = (id: string) => {
+ if (confirm("Delete this movie?")) {
+ remove(ref(db, `movies/${id}`)).then(async () => {
+ removeAdminContentListItem("movies", id);
+ await removeAdminContentIndex("movies", id).catch(() => {});
+ toast.success("Deleted!");
+ }).catch(err => toast.error("Error: " + err.message));
+ }
+ };
+
+ const updateMovieVisibility = async (id: string, visibility: "public" | "private") => {
+ try {
+ await update(ref(db, `movies/${id}`), { visibility, updatedAt: Date.now() });
+ toast.success(visibility === "private" ? "Movie moved to Private" : "Movie moved to Public");
+ } catch (err: any) {
+ toast.error("Error: " + err.message);
+ }
+ };
+
+  // Notifications removed â€” in-app and browser push fully disabled.
+
+ // ==================== NEW RELEASES ====================
+ const handleReleaseContentChange = async (value: string) => {
+ setReleaseContent(value);
+ setReleaseSeason(""); setReleaseEpisode(""); setReleaseEpisodeEnd(""); setReleaseSeasons([]); setReleaseEpisodes([]);
+ if (!value) { setShowSeasonEpisode(false); return; }
+ const [contentId, contentType] = value.split("|");
+ if (contentType === "webseries") {
+ const series = (await getFullAdminContentItem("webseries", contentId)) || webseriesData.find(s => s.id === contentId);
+ if (series?.seasons?.length > 0) {
+ setReleaseSeasons(series.seasons.map((s: any, i: number) => ({ index: i, name: s.name || `Season ${i + 1}` })));
+ setShowSeasonEpisode(true);
+ } else { toast.error("This series has no seasons"); setShowSeasonEpisode(false); }
+ } else if (contentType === "movie") {
+ setReleaseSeasons([{ index: 0, name: "Movie" }]);
+ setReleaseEpisodes([{ index: 0, name: "Complete Movie" }]);
+ setReleaseSeason("0"); setReleaseEpisode("0");
+ setShowSeasonEpisode(true);
+ }
+ };
+
+ const handleReleaseSeasonChange = async (value: string) => {
+ setReleaseSeason(value); setReleaseEpisode(""); setReleaseEpisodeEnd(""); setReleaseEpisodes([]);
+ if (!releaseContent || value === "") return;
+ const [contentId, contentType] = releaseContent.split("|");
+ if (contentType === "animesalt") {
+ // AnimeSalt no longer supported in releases - skip
+ toast.error("AnimeSalt content is not supported in New Releases"); return;
+ } else if (contentType === "webseries") {
+ const series = (await getFullAdminContentItem("webseries", contentId)) || webseriesData.find(s => s.id === contentId);
+ if (series?.seasons?.[parseInt(value)]) {
+ const season = series.seasons[parseInt(value)];
+  const safeEpisodes = Array.isArray(season?.episodes) ? season.episodes : [];
+  if (safeEpisodes.length > 0) {
+  setReleaseEpisodes(safeEpisodes.map((ep: any, i: number) => ({ index: i, name: `Episode ${ep?.episodeNumber || i + 1}` })));
+ } else { toast.error("No episodes in this season"); }
+ }
+ } else if (contentType === "movie") {
+ setReleaseEpisodes([{ index: 0, name: "Complete Movie" }]);
+ setReleaseEpisode("0");
+ }
+ };
+
+ const addNewRelease = async () => {
+ if (!releaseContent || releaseSeason === "" || releaseEpisode === "") {
+ toast.error("Please select content, season and episode"); return;
+ }
+ const [contentId, contentType] = releaseContent.split("|");
+ let content: any; let episodeInfo: any = {};
+ if (contentType === "webseries") {
+ content = (await getFullAdminContentItem("webseries", contentId)) || webseriesData.find(s => s.id === contentId);
+ if (content?.seasons?.[parseInt(releaseSeason)]) {
+ const season = content.seasons[parseInt(releaseSeason)];
+  const episode = season.episodes?.[parseInt(releaseEpisode)];
+  const episodeEnd = releaseEpisodeEnd !== "" ? season.episodes?.[parseInt(releaseEpisodeEnd)] : episode;
+  const episodeNumber = episode?.episodeNumber || parseInt(releaseEpisode) + 1;
+  const episodeNumberEnd = episodeEnd?.episodeNumber || episodeNumber;
+ episodeInfo = {
+ seasonNumber: parseInt(releaseSeason) + 1,
+ episodeNumber,
+ episodeNumberEnd: Math.max(episodeNumber, episodeNumberEnd),
+ seasonName: season.name || `Season ${parseInt(releaseSeason) + 1}`
+ };
+ }
+ } else {
+ content = (await getFullAdminContentItem("movies", contentId)) || moviesData.find(m => m.id === contentId);
+ episodeInfo = { type: "movie", seasonName: "Movie" };
+ }
+ if (!content) { toast.error("Content not found"); return; }
+
+ const newRelease = {
+ contentId, contentType, title: content.title, poster: content.poster || "",
+ year: content.year || "N/A", rating: content.rating || "N/A",
+ visibility: content.visibility || "public",
+ episodeInfo, timestamp: Date.now(), active: true,
+ weeklyEnabled: content.weeklyEnabled === true,
+ weeklyEveryDays: Math.max(1, Number(content.weeklyEveryDays) || 7)
+ };
+ try {
+ await set(push(ref(db, "newEpisodeReleases")), newRelease);
+ toast.success("Added as New Release");
+   startTransition(() => { setReleaseContent(""); setReleaseSeason(""); setReleaseEpisode(""); setReleaseEpisodeEnd(""); setShowSeasonEpisode(false); });
+
+ 
+ } catch (err: any) { toast.error("Error: " + err.message); }
+ };
+
+ const toggleReleaseStatus = (id: string, current: boolean) => {
+ set(ref(db, `newEpisodeReleases/${id}/active`), !current)
+ .then(() => toast.success(!current ? "Activated" : "Deactivated"))
+ .catch(() => toast.error("Error updating"));
+ };
+
+ const deleteRelease = (id: string) => {
+ if (confirm("Delete this release?")) {
+ remove(ref(db, `newEpisodeReleases/${id}`))
+ .then(() => toast.success("Deleted"))
+ .catch(() => toast.error("Error deleting"));
+ }
+ };
+
+ // ==================== QUICK FETCH ====================
+ const quickFetch = async () => {
+ if (!quickTmdbId.trim()) { toast.error("Please enter TMDB ID"); return; }
+ if (fetchType === "tv") {
+ await fetchSeriesDetails(parseInt(quickTmdbId));
+ setActiveSection("webseries"); setSeriesTab("ws-add");
+ } else {
+ await fetchMovieDetails(parseInt(quickTmdbId));
+ setActiveSection("movies"); setMoviesTab("mv-add");
+ }
+ };
+
+ // ==================== EXPORT / REFRESH ====================
+  const refreshData = async () => {
+   setDropdownOpen(false);
+   invalidateAdminContentCache();
+   toast.info("Refreshing series & moviesâ€¦");
+   const load = adminLoadContentListRef.current;
+   if (!load) { toast.error("Refresh unavailable"); return; }
+   try {
+     await Promise.all([load("webseries", { force: true }), load("movies", { force: true })]);
+     toast.success("Refreshed âœ“");
+   } catch { toast.error("Refresh failed"); }
+  };
+
+ const exportData = async () => {
+ try {
+ const [ws, mv, cat, us, rel] = await Promise.all([
+ get(ref(db, "webseries")), get(ref(db, "movies")), get(ref(db, "categories")),
+ get(ref(db, "users")), get(ref(db, "newEpisodeReleases"))
+ ]);
+ const data = {
+ webseries: ws.val(), movies: mv.val(), categories: cat.val(),
+ users: us.val(), newEpisodeReleases: rel.val(),
+ exportedAt: new Date().toISOString()
+ };
+ const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+ const url = URL.createObjectURL(blob);
+ const a = document.createElement("a");
+ a.href = url; a.download = `${SITE_NAME.toLowerCase().replace(/\s+/g, '-')}-backup-${Date.now()}.json`; a.click();
+ toast.success("Data exported!");
+ } catch (err: any) { toast.error("Error: " + err.message); }
+ setDropdownOpen(false);
+ };
+
+ // Computed stats (memoized to prevent recalculation on every render)
+ const totalCategories = useMemo(() => Object.keys(categoriesData).length, [categoriesData]);
+ // Live online = heartbeat within last 90s (heartbeat runs every 30s). Falls back to `online` flag if lastSeen missing.
+ const [liveTick, setLiveTick] = useState(0);
+ useEffect(() => {
+   const t = setInterval(() => setLiveTick((n) => n + 1), 15000);
+   return () => clearInterval(t);
+ }, []);
+ const ONLINE_WINDOW_MS = 90_000;
+ const onlineUsers = useMemo(() => {
+   const now = Date.now();
+   return usersData.filter((u) => {
+     const ls = Number(u?.lastSeen || 0);
+     if (ls > 0) return now - ls <= ONLINE_WINDOW_MS;
+     return !!u?.online;
+   }).length;
+   // eslint-disable-next-line react-hooks/exhaustive-deps
+ }, [usersData, liveTick]);
+ const offlineUsers = useMemo(() => Math.max(0, usersData.length - onlineUsers), [usersData.length, onlineUsers]);
+
+ // Strict guest detection (per user spec):
+ // A REAL user MUST have a valid email address (Firebase Email or Google sign-in always provides one).
+ // Anything else â€” entries whose id looks like `user_1773xxx...` and have no email â€” is a guest.
+ const isValidEmail = (val: any): boolean => {
+ if (!val || typeof val !== "string") return false;
+ const s = val.trim().toLowerCase();
+ if (!s) return false;
+ return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
+ };
+ const guestUidSet = useMemo(() => {
+ const guests = new Set<string>();
+ usersData.forEach((u: any) => {
+ if (!u || !u.id) return;
+ if (isValidEmail(u.email)) return; // real user (email or Google sign-in)
+ guests.add(String(u.id));
+ });
+ return guests;
+ }, [usersData]);
+ const recentContent = useMemo(() => [
+ ...webseriesData.map((item) => ({ ...item, _adminKind: "series" as const })),
+ ...moviesData.map((item) => ({ ...item, _adminKind: "movie" as const })),
+ ].sort((a, b) => (Number(b.updatedAt) || Number(b.createdAt) || 0) - (Number(a.updatedAt) || Number(a.createdAt) || 0)).slice(0, 3), [webseriesData, moviesData]);
+ // Warm Recent Content posters on idle so the dashboard strip paints
+ // instantly and never shows the "N" placeholder even on first visit.
+ useEffect(() => {
+  if (!recentContent.length) return;
+  const posters = recentContent.map((item: any) => item?.poster).filter(Boolean);
+  if (posters.length) adminIdle(() => { void preloadCachedImages(posters, 8); }, 300);
+ }, [recentContent]);
+
+ // Weekly schedule â€” subscribe ALWAYS (not gated on activeSection), seed
+ // from module-level cache so opening the dashboard tab shows the strip
+ // instantly instead of waiting for a fresh Firebase snapshot.
+ const [weeklyScheduleData, setWeeklyScheduleData] = useState<Record<string, any>>(() => weeklyScheduleCache);
+ useEffect(() => {
+  const unsub = onValue(ref(db, "weeklySchedule"), snap => {
+   const val = snap.val() || {};
+   writeWeeklyScheduleCache(val);
+   startTransition(() => setWeeklyScheduleData(val));
+  });
+  return () => unsub();
+ }, []);
+ const todayDayName = useMemo(() => new Date().toLocaleDateString("en-US", { weekday: "long" }), []);
+ const todayScheduled = useMemo(
+ () => Object.values(weeklyScheduleData).filter((s: any) => s?.day === todayDayName || s?.day === "AllDay"),
+ [weeklyScheduleData, todayDayName]
+ );
+ // Warm the today-strip posters on idle so the Weekly Episode row paints
+ // instantly the next time the admin returns to the dashboard.
+ useEffect(() => {
+  if (!todayScheduled.length) return;
+  const posters = todayScheduled.slice(0, 8).map((s: any) => s?.poster).filter(Boolean);
+  if (posters.length) adminIdle(() => { void preloadCachedImages(posters, 12); }, 400);
+ }, [todayScheduled]);
+ const categoryList = useMemo(() => Object.entries(categoriesData).map(([id, cat]: any) => ({ id, name: cat.name })), [categoriesData]);
+ const languageOptions = useMemo(() => ["English", "Hindi", "Tamil", "Telugu", "Korean", "Japanese", "Spanish", "Multi"], []);
+
+ const buildEmptyAudioTrack = useCallback(() => ({
+ language: "",
+ label: "",
+ link: "",
+  audioUrl: "",
+  rawAudioUrl: "",
+  isDefault: false,
+ }), []);
+
+ const normalizeLanguageValue = useCallback((value?: string | null) => String(value || "").trim(), []);
+
+ const normalizeAudioTrackList = useCallback((tracks?: any[] | Record<string, any> | null) => {
+ const list = Array.isArray(tracks) ? tracks : tracks && typeof tracks === "object" ? Object.values(tracks) : [];
+ const cleaned = list
+ .map((track: any, index: number) => {
+ const label = normalizeLanguageValue(track?.label || track?.language || track?.name || `Audio ${index + 1}`) || `Audio ${index + 1}`;
+ const language = normalizeLanguageValue(track?.language || track?.label || label) || label;
+ const link = String(track?.link || track?.audioUrl || track?.rawAudioUrl || track?.uri || track?.url || "").trim();
+ return {
+ language,
+ label,
+ link,
+ audioUrl: String(track?.audioUrl || link || "").trim(),
+ rawAudioUrl: String(track?.rawAudioUrl || link || "").trim(),
+ isDefault: track?.isDefault === true,
+ };
+ })
+ .filter((track: any) => String(track.label || track.language || track.link || "").trim());
+ if (cleaned.length > 0 && !cleaned.some((track: any) => track.isDefault)) {
+ cleaned[0].isDefault = true;
+ }
+ return cleaned;
+ }, [normalizeLanguageValue]);
+
+ const normalizeEpisodeStructure = useCallback((episode: any, index = 0): Episode => {
+ const audioTracks = normalizeAudioTrackList(
+  Array.isArray(episode?.audioTracks) && episode.audioTracks.length > 0
+   ? episode.audioTracks
+   : episode?.defaultAudio
+    ? [episode.defaultAudio]
+    : [],
+ );
+ const defaultAudioIndex = audioTracks.findIndex((track: any) => track?.isDefault);
+ const resolvedAudioTracks = audioTracks.map((track: any, idx: number) => ({
+  ...track,
+  isDefault: defaultAudioIndex >= 0 ? idx === defaultAudioIndex : idx === 0,
+ }));
+ const defaultAudio = resolvedAudioTracks.find((track: any) => track?.isDefault) || resolvedAudioTracks[0] || null;
+ const link = String(episode?.link || episode?.link1080 || episode?.directUrl || episode?.movieLink || "").trim();
+ const link480 = String(episode?.link480 || episode?.qualityLinks?.p480 || "").trim();
+ const link720 = String(episode?.link720 || episode?.qualityLinks?.p720 || "").trim();
+ const link1080 = String(episode?.link1080 || episode?.qualityLinks?.p1080 || link || "").trim();
+ const link4k = String(episode?.link4k || episode?.qualityLinks?.p4k || "").trim();
+ return {
+ episodeNumber: Number(episode?.episodeNumber || episode?.number || index + 1),
+ title: episode?.title || `Episode ${Number(episode?.episodeNumber || episode?.number || index + 1)}`,
+ link,
+ link480,
+ link720,
+ link1080,
+ link4k,
+ qualityLinks: {
+ default: link || link1080 || link720 || link480 || "",
+ p480: link480,
+ p720: link720,
+ p1080: link1080 || link,
+ p4k: link4k,
+ },
+ audioTracks: resolvedAudioTracks,
+ defaultAudio,
+ subtitleTracks: Array.isArray(episode?.subtitleTracks) ? episode.subtitleTracks : [],
+ };
+ }, [normalizeAudioTrackList]);
+
+ const cloneSeasonList = useCallback((seasons?: Season[]) => {
+ try {
+ const cloned = JSON.parse(JSON.stringify(seasons || [])) as Season[];
+ return cloned.map((season: any, sIdx: number) => ({
+ ...season,
+ name: season?.name || `Season ${sIdx + 1}`,
+ seasonNumber: Number(season?.seasonNumber || sIdx + 1),
+ episodes: Array.isArray(season?.episodes) ? season.episodes.map((episode: any, eIdx: number) => normalizeEpisodeStructure(episode, eIdx)) : [],
+ })) as Season[];
+ } catch {
+ return Array.isArray(seasons) ? seasons.map((season: any, sIdx: number) => ({
+ ...season,
+ name: season?.name || `Season ${sIdx + 1}`,
+ seasonNumber: Number(season?.seasonNumber || sIdx + 1),
+ episodes: Array.isArray(season?.episodes) ? season.episodes.map((episode: any, eIdx: number) => normalizeEpisodeStructure(episode, eIdx)) : [],
+ })) as Season[] : [];
+ }
+ }, [normalizeEpisodeStructure]);
+
+ const sanitizeSeasonLanguageMap = useCallback((map?: SeasonsByLanguage | null) => {
+ const cleaned: SeasonsByLanguage = {};
+ Object.entries(map || {}).forEach(([language, seasons]) => {
+ const key = normalizeLanguageValue(language);
+ if (!key) return;
+ cleaned[key] = cloneSeasonList(Array.isArray(seasons) ? seasons : []);
+ });
+ return cleaned;
+ }, [cloneSeasonList, normalizeLanguageValue]);
+
+ const getCardLanguageLabel = useCallback((languages: string[]) => {
+ const cleaned = Array.from(new Set(languages.map((item) => normalizeLanguageValue(item)).filter(Boolean)));
+ if (cleaned.length === 0) return "Hindi";
+ if (cleaned.length === 1) return cleaned[0];
+ if (cleaned.length === 2) return "Dual";
+ return "Multiple";
+ }, [normalizeLanguageValue]);
+
+ const getEpisodeTrackForLanguage = useCallback((episode: any, language: string) => {
+ const key = normalizeLanguageValue(language).toLowerCase();
+ const tracks = Array.isArray(episode?.audioTracks) ? episode.audioTracks : episode?.audioTracks && typeof episode.audioTracks === "object" ? Object.values(episode.audioTracks) : [];
+ return (tracks as any[]).find((track) => {
+ const label = normalizeLanguageValue(track?.label || track?.language).toLowerCase();
+ return !!label && label === key;
+ });
+ }, [normalizeLanguageValue]);
+
+ const ensureEpisodeTrackForLanguage = useCallback((episode: any, language: string) => {
+ const existing = getEpisodeTrackForLanguage(episode, language);
+ if (existing) return existing;
+ const normalized = normalizeLanguageValue(language);
+ const created = buildEmptyAudioTrack();
+ created.language = normalized;
+ created.label = normalized;
+ if (!Array.isArray(episode.audioTracks)) episode.audioTracks = [];
+ episode.audioTracks.push(created);
+ return created;
+ }, [buildEmptyAudioTrack, getEpisodeTrackForLanguage, normalizeLanguageValue]);
+
+ const buildLanguageSummaryFromTracks = useCallback((tracks?: any[]) => {
+ const langs = Array.from(new Set(((tracks || []) as any[])
+ .map((track) => normalizeLanguageValue(track?.label || track?.language))
+ .filter(Boolean)));
+ return {
+ list: langs,
+ label: getCardLanguageLabel(langs),
+ };
+ }, [getCardLanguageLabel, normalizeLanguageValue]);
+
+ const syncSeriesLanguageSummary = useCallback((form: any, seasonsByLanguage: SeasonsByLanguage) => {
+ const normalizedMap = sanitizeSeasonLanguageMap(seasonsByLanguage);
+ const seasonLanguages = new Set<string>();
+ const episodeLanguages = new Set<string>();
+ Object.entries(normalizedMap).forEach(([language, seasons]) => {
+ if (Array.isArray(seasons) && seasons.length > 0) {
+ seasonLanguages.add(language);
+ if (seasons.some((season: any) => Array.isArray(season?.episodes) && season.episodes.length > 0)) {
+ episodeLanguages.add(language);
+ }
+ }
+ });
+ const selectedBase = normalizeLanguageValue(form?.selectedAdminLanguage);
+ const fallbackBase = normalizeLanguageValue(form?.baseLanguage || form?.language || Array.from(seasonLanguages)[0] || "Hindi");
+ let resolvedBase = fallbackBase || "Hindi";
+ // The base language MUST point at a language that actually has episodes,
+ // otherwise the saved top-level `seasons` array is empty and the player
+ // shows no season/episode list (e.g. an English-only series saved while the
+ // stored base still said "Hindi").
+ if (episodeLanguages.size > 0 && !episodeLanguages.has(resolvedBase)) {
+ resolvedBase = (selectedBase && episodeLanguages.has(selectedBase) ? selectedBase : Array.from(episodeLanguages)[0]) || resolvedBase;
+ }
+ const summaryLanguages = Array.from(new Set([resolvedBase, ...Array.from(seasonLanguages)].filter(Boolean)));
+ const ordered = Array.from(new Set([resolvedBase, ...Array.from(seasonLanguages), selectedBase].filter(Boolean)));
+
+
+ return {
+ ...form,
+ baseLanguage: resolvedBase,
+ selectedAdminLanguage: selectedBase || resolvedBase,
+ availableLanguages: ordered,
+ language: getCardLanguageLabel(summaryLanguages),
+ audioTracks: ordered.map((lang) => ({ language: lang, label: lang, link: "" })),
+ };
+ }, [getCardLanguageLabel, normalizeLanguageValue, sanitizeSeasonLanguageMap]);
+
+ const updateSeriesEpisodeLanguageLink = useCallback((sIdx: number, eIdx: number, field: string, value: string, language?: string) => {
+ setSeasonsData((prev) => {
+  const copy = Array.isArray(prev) ? [...prev] : [];
+  const rawSeason = copy[sIdx] || { name: `Season ${sIdx + 1}`, seasonNumber: sIdx + 1, episodes: [] };
+  const season = { ...rawSeason, episodes: Array.isArray((rawSeason as any).episodes) ? [...(rawSeason as any).episodes] : [] } as any;
+  const episode = { ...(season.episodes[eIdx] || normalizeEpisodeStructure({ episodeNumber: eIdx + 1 }, eIdx)) } as any;
+ episode[field] = value;
+ const currentQualityLinks = episode.qualityLinks || {};
+ episode.qualityLinks = {
+ ...currentQualityLinks,
+ default: field === "link" ? value : (episode.link || currentQualityLinks.default || ""),
+ p480: field === "link480" ? value : (episode.link480 || currentQualityLinks.p480 || ""),
+ p720: field === "link720" ? value : (episode.link720 || currentQualityLinks.p720 || ""),
+ p1080: field === "link1080" ? value : (episode.link1080 || episode.link || currentQualityLinks.p1080 || ""),
+ p4k: field === "link4k" ? value : (episode.link4k || currentQualityLinks.p4k || ""),
+ };
+
+ season.episodes[eIdx] = episode;
+ copy[sIdx] = season;
+ return copy;
+ });
+  }, [normalizeEpisodeStructure]);
+
+ const updateSeriesEpisodeAudioTrack = useCallback((sIdx: number, eIdx: number, tIdx: number, field: string, value: string) => {
+ setSeasonsData((prev) => {
+  const copy = Array.isArray(prev) ? [...prev] : [];
+  const rawSeason = copy[sIdx] || { name: `Season ${sIdx + 1}`, seasonNumber: sIdx + 1, episodes: [] };
+  const season = { ...rawSeason, episodes: Array.isArray((rawSeason as any).episodes) ? [...(rawSeason as any).episodes] : [] } as any;
+  const episode = { ...(season.episodes[eIdx] || normalizeEpisodeStructure({ episodeNumber: eIdx + 1 }, eIdx)) } as any;
+ const tracks = Array.isArray(episode.audioTracks) ? [...episode.audioTracks] : [];
+ const nextTrack: any = { ...(tracks[tIdx] || buildEmptyAudioTrack()), [field]: value };
+ if (field === "link") {
+  nextTrack.audioUrl = value;
+  nextTrack.rawAudioUrl = value;
+ }
+ tracks[tIdx] = nextTrack;
+ if (!tracks.some((track: any) => track?.isDefault)) tracks[0] = { ...(tracks[0] || buildEmptyAudioTrack()), isDefault: true };
+ episode.defaultAudio = tracks.find((track: any) => track?.isDefault) || tracks[0] || null;
+ episode.audioTracks = tracks;
+ season.episodes[eIdx] = episode;
+ copy[sIdx] = season;
+ return copy;
+ });
+  }, [buildEmptyAudioTrack, normalizeEpisodeStructure]);
+
+ const addSeriesEpisodeAudioTrack = useCallback((sIdx: number, eIdx: number) => {
+ setSeasonsData((prev) => {
+  const copy = Array.isArray(prev) ? [...prev] : [];
+  const rawSeason = copy[sIdx] || { name: `Season ${sIdx + 1}`, seasonNumber: sIdx + 1, episodes: [] };
+  const season = { ...rawSeason, episodes: Array.isArray((rawSeason as any).episodes) ? [...(rawSeason as any).episodes] : [] } as any;
+  const episode = { ...(season.episodes[eIdx] || normalizeEpisodeStructure({ episodeNumber: eIdx + 1 }, eIdx)) } as any;
+ const existingTracks = Array.isArray(episode.audioTracks) ? episode.audioTracks : [];
+ const nextTrack = { ...buildEmptyAudioTrack(), isDefault: existingTracks.length === 0 };
+ episode.audioTracks = [...existingTracks, nextTrack];
+ episode.defaultAudio = episode.audioTracks.find((track: any) => track?.isDefault) || episode.audioTracks[0] || null;
+ season.episodes[eIdx] = episode;
+ copy[sIdx] = season;
+ return copy;
+ });
+  }, [buildEmptyAudioTrack, normalizeEpisodeStructure]);
+
+ const removeSeriesEpisodeAudioTrack = useCallback((sIdx: number, eIdx: number, tIdx: number) => {
+ setSeasonsData((prev) => {
+  const copy = Array.isArray(prev) ? [...prev] : [];
+  const rawSeason = copy[sIdx] || { name: `Season ${sIdx + 1}`, seasonNumber: sIdx + 1, episodes: [] };
+  const season = { ...rawSeason, episodes: Array.isArray((rawSeason as any).episodes) ? [...(rawSeason as any).episodes] : [] } as any;
+  const episode = { ...(season.episodes[eIdx] || normalizeEpisodeStructure({ episodeNumber: eIdx + 1 }, eIdx)) } as any;
+ const tracks = (Array.isArray(episode.audioTracks) ? episode.audioTracks : []).filter((_: any, idx: number) => idx !== tIdx);
+ if (tracks.length > 0 && !tracks.some((track: any) => track?.isDefault)) tracks[0] = { ...tracks[0], isDefault: true };
+ episode.audioTracks = tracks;
+ episode.defaultAudio = tracks.find((track: any) => track?.isDefault) || tracks[0] || null;
+ season.episodes[eIdx] = episode;
+ copy[sIdx] = season;
+ return copy;
+ });
+  }, [normalizeEpisodeStructure]);
+
+ const setSeriesEpisodeDefaultAudioTrack = useCallback((sIdx: number, eIdx: number, tIdx: number) => {
+ setSeasonsData((prev) => {
+  const copy = Array.isArray(prev) ? [...prev] : [];
+  const rawSeason = copy[sIdx] || { name: `Season ${sIdx + 1}`, seasonNumber: sIdx + 1, episodes: [] };
+  const season = { ...rawSeason, episodes: Array.isArray((rawSeason as any).episodes) ? [...(rawSeason as any).episodes] : [] } as any;
+  const episode = { ...(season.episodes[eIdx] || normalizeEpisodeStructure({ episodeNumber: eIdx + 1 }, eIdx)) } as any;
+ const tracks = (Array.isArray(episode.audioTracks) ? episode.audioTracks : []).map((track: any, idx: number) => ({ ...track, isDefault: idx === tIdx }));
+ episode.audioTracks = tracks;
+ episode.defaultAudio = tracks[tIdx] || tracks[0] || null;
+ season.episodes[eIdx] = episode;
+ copy[sIdx] = season;
+ return copy;
+ });
+  }, [normalizeEpisodeStructure]);
+
+ const updateSeriesEpisodeSubtitle = useCallback((sIdx: number, eIdx: number, value: string) => {
+ setSeasonsData((prev) => {
+  const copy = Array.isArray(prev) ? [...prev] : [];
+  const rawSeason = copy[sIdx] || { name: `Season ${sIdx + 1}`, seasonNumber: sIdx + 1, episodes: [] };
+  const season = { ...rawSeason, episodes: Array.isArray((rawSeason as any).episodes) ? [...(rawSeason as any).episodes] : [] } as any;
+  const episode = { ...(season.episodes[eIdx] || normalizeEpisodeStructure({ episodeNumber: eIdx + 1 }, eIdx)) } as any;
+ const url = value.trim();
+ episode.subtitleTracks = url ? [{ label: "Default", language: "", url }] : [];
+ season.episodes[eIdx] = episode;
+ copy[sIdx] = season;
+ return copy;
+ });
+  }, [normalizeEpisodeStructure]);
+
+ const ensureSeriesLanguageTab = useCallback((language: string) => {
+ const normalized = normalizeLanguageValue(language);
+ if (!normalized) return;
+ const currentLanguage = normalizeLanguageValue(seriesForm?.selectedAdminLanguage || seriesForm?.baseLanguage || seriesForm?.language || "Hindi") || "Hindi";
+ const nextMap = sanitizeSeasonLanguageMap({
+ ...seriesSeasonsByLanguage,
+ [currentLanguage]: cloneSeasonList(seasonsData),
+ });
+ const nextSeasons = cloneSeasonList(nextMap[normalized] || []);
+ if (!(normalized in nextMap)) nextMap[normalized] = [];
+ setSeriesSeasonsByLanguage(nextMap);
+ setSeasonsData(cloneSeasonList(nextSeasons));
+ setSeriesForm((prev: any) => syncSeriesLanguageSummary({ ...(prev || {}), selectedAdminLanguage: normalized }, nextMap));
+ }, [cloneSeasonList, normalizeLanguageValue, seasonsData, seriesForm, seriesSeasonsByLanguage, syncSeriesLanguageSummary, sanitizeSeasonLanguageMap]);
+
+ // Season/Episode helpers
+ const addSeason = (name = "", episodeCount = 1) => {
+ setSeasonsData(prev => [...prev, {
+ name: name || `Season ${prev.length + 1}`, seasonNumber: prev.length + 1,
+ episodes: Array(episodeCount).fill(null).map((_, i) => normalizeEpisodeStructure({ episodeNumber: i + 1, title: `Episode ${i + 1}`, link: "" }, i))
+ }]);
+ };
+
+ const removeSeason = (idx: number) => {
+ if (confirm("Remove this season?")) setSeasonsData(prev => prev.filter((_, i) => i !== idx));
+ };
+
+ const addEpisode = async (sIdx: number) => {
+ const season = { ...(seasonsData[sIdx] as any), episodes: Array.isArray((seasonsData[sIdx] as any)?.episodes) ? (seasonsData[sIdx] as any).episodes : [] } as Season;
+ const num = season.episodes.length + 1;
+ let epTitle = `Episode ${num}`;
+
+ // Auto-fetch episode name from TMDB if tmdbId is available
+ if (seriesForm?.tmdbId) {
+ try {
+ const seasonNum = season.seasonNumber || sIdx + 1;
+ const res = await fetch(`${TMDB_BASE_URL}/tv/${seriesForm.tmdbId}/season/${seasonNum}?api_key=${TMDB_API_KEY}&language=en-US`);
+ if (res.ok) {
+ const tmdbSeason = await res.json();
+ const tmdbEp = tmdbSeason.episodes?.find((e: any) => e.episode_number === num);
+ if (tmdbEp?.name) epTitle = tmdbEp.name;
+ }
+ } catch {}
+ }
+
+ setSeasonsData(prev => {
+ const copy = [...prev];
+ const s = { ...copy[sIdx], episodes: Array.isArray(copy[sIdx]?.episodes) ? [...copy[sIdx].episodes] : [] };
+ s.episodes.push(normalizeEpisodeStructure({ episodeNumber: num, title: epTitle, link: "", link480: "", link720: "", link1080: "", link4k: "", audioTracks: [] }, num - 1));
+ copy[sIdx] = s;
+ return copy;
+ });
+ };
+
+ const removeEpisode = (sIdx: number, eIdx: number) => {
+ if (!confirm("Remove this episode?")) return;
+ setSeasonsData(prev => {
+  const copy = Array.isArray(prev) ? [...prev] : [];
+  const rawSeason = copy[sIdx] || { name: `Season ${sIdx + 1}`, seasonNumber: sIdx + 1, episodes: [] };
+  const s = { ...rawSeason, episodes: (Array.isArray((rawSeason as any).episodes) ? (rawSeason as any).episodes : []).filter((_: any, i: number) => i !== eIdx) };
+ // Re-number episodes
+  s.episodes = s.episodes.map((ep: any, i: number) => ({ ...ep, episodeNumber: i + 1 }));
+ copy[sIdx] = s;
+ return copy;
+ });
+ };
+
+  // ============ JSON import â€” SMART MERGE ============
+  // Only fields ACTUALLY PRESENT (non-empty) in the JSON overwrite existing values.
+  // Missing / empty fields leave existing links untouched â†’ paste a 480p-only JSON
+  // and every other quality (720p/1080p/4K) stays intact.
+  const QUALITY_FIELDS = ['title', 'link', 'link480', 'link720', 'link1080', 'link4k'] as const;
+  const hasVal = (v: any) => v !== undefined && v !== null && !(typeof v === 'string' && v.trim() === '');
+
+  const mergeEpisodeSmart = (existing: any, incoming: any) => {
+    const out: any = { ...(existing || {}) };
+    QUALITY_FIELDS.forEach((f) => { if (hasVal(incoming?.[f])) out[f] = incoming[f]; });
+    if (incoming?.qualityLinks && typeof incoming.qualityLinks === 'object') {
+      const merged: any = { ...(existing?.qualityLinks || {}) };
+      Object.entries(incoming.qualityLinks).forEach(([k, v]) => { if (hasVal(v)) merged[k] = v; });
+      out.qualityLinks = merged;
+    }
+    if (Array.isArray(incoming?.audioTracks) && incoming.audioTracks.length > 0) {
+      out.audioTracks = normalizeAudioTrackList(incoming.audioTracks);
+    }
+    if (incoming?.episodeNumber != null) out.episodeNumber = incoming.episodeNumber;
+    return out;
+  };
+
+  const buildFreshEpisode = (raw: any, eIdx: number) => {
+    const num = raw?.episodeNumber || raw?.number || eIdx + 1;
+    return {
+      episodeNumber: num,
+      title: raw?.title || `Episode ${num}`,
+      link: raw?.link || '',
+      link480: raw?.link480 || '',
+      link720: raw?.link720 || '',
+      link1080: raw?.link1080 || '',
+      link4k: raw?.link4k || '',
+      qualityLinks: raw?.qualityLinks || {},
+      audioTracks: normalizeAudioTrackList(raw?.audioTracks),
+    };
+  };
+
+  const smartMergeEpisodesInto = (existingList: any[], incoming: any[]) => {
+    const list = [...(existingList || [])];
+    let updated = 0, added = 0;
+    incoming.forEach((raw: any, eIdx: number) => {
+      const num = raw?.episodeNumber || raw?.number || eIdx + 1;
+      const idx = list.findIndex((e: any) => Number(e?.episodeNumber) === Number(num));
+      if (idx >= 0) {
+        list[idx] = mergeEpisodeSmart(list[idx], { ...raw, episodeNumber: num });
+        updated++;
+      } else {
+        list.push(buildFreshEpisode(raw, eIdx));
+        added++;
+      }
+    });
+    list.sort((a: any, b: any) => (a.episodeNumber || 0) - (b.episodeNumber || 0));
+    return { list, updated, added };
+  };
+
+  // JSON import for Web Series seasons (top-level paste)
+  const wsParseJsonEpisodes = (jsonData: any) => {
+    try {
+      let episodes: any[] = [];
+      let seasonName = '';
+
+      if (Array.isArray(jsonData)) {
+        episodes = jsonData;
+      } else if (jsonData.episodes && Array.isArray(jsonData.episodes)) {
+        episodes = jsonData.episodes;
+        seasonName = jsonData.name || jsonData.season || '';
+      } else if (jsonData.seasons && Array.isArray(jsonData.seasons)) {
+        // Smart merge: if a season with same seasonNumber (or same name) already
+        // exists â†’ merge episode-level (only present fields overwrite).
+        // Otherwise append as a new season.
+        let mergedSeasons = 0, appendedSeasons = 0, mergedEps = 0, addedEps = 0;
+        setSeasonsData(prev => {
+          const copy = [...prev];
+          const expandMap: Record<number, boolean> = {};
+          jsonData.seasons.forEach((s: any, sIdx: number) => {
+            const incomingEps = Array.isArray(s.episodes) ? s.episodes : [];
+            const wantedNum = s.seasonNumber || s.season || null;
+            const wantedName = (s.name || '').trim().toLowerCase();
+            let matchIdx = -1;
+            if (wantedNum != null) matchIdx = copy.findIndex((x: any) => Number(x?.seasonNumber) === Number(wantedNum));
+            if (matchIdx < 0 && wantedName) matchIdx = copy.findIndex((x: any) => (x?.name || '').trim().toLowerCase() === wantedName);
+            if (matchIdx >= 0) {
+              const merged = smartMergeEpisodesInto(copy[matchIdx].episodes || [], incomingEps);
+              copy[matchIdx] = { ...copy[matchIdx], episodes: merged.list };
+              expandMap[matchIdx] = true;
+              mergedSeasons++; mergedEps += merged.updated; addedEps += merged.added;
+            } else {
+              const newIdx = copy.length;
+              copy.push({
+                name: s.name || `Season ${copy.length + 1}`,
+                seasonNumber: s.seasonNumber || copy.length + 1,
+                episodes: incomingEps.map((ep: any, eIdx: number) => buildFreshEpisode(ep, eIdx)),
+              });
+              expandMap[newIdx] = true;
+              appendedSeasons++; addedEps += incomingEps.length;
+            }
+          });
+          setExpandedSeasons(p => ({ ...p, ...expandMap }));
+          return copy;
+        });
+        toast.success(`Merged ${mergedSeasons} season(s), added ${appendedSeasons} â€¢ ${mergedEps} episodes updated, ${addedEps} added`);
+        setWsJsonImportMode(false);
+        setWsJsonPasteText('');
+        return;
+      } else {
+        toast.error('Invalid JSON format. An episodes or seasons array is required.');
+        return;
+      }
+
+      if (episodes.length === 0) {
+        toast.error('No episodes found in the JSON');
+        return;
+      }
+
+      // Flat episodes JSON at top-level:
+      // â†’ if a season with the given name matches existing, MERGE into it
+      // â†’ else create a new season
+      const wantedName = seasonName.trim().toLowerCase();
+      let didMerge = false, mergedCount = 0, addedCount = 0, targetName = '';
+      setSeasonsData(prev => {
+        const copy = [...prev];
+        let idx = -1;
+        if (wantedName) idx = copy.findIndex((x: any) => (x?.name || '').trim().toLowerCase() === wantedName);
+        if (idx >= 0) {
+          const merged = smartMergeEpisodesInto(copy[idx].episodes || [], episodes);
+          copy[idx] = { ...copy[idx], episodes: merged.list };
+          setExpandedSeasons(p => ({ ...p, [idx]: true }));
+          didMerge = true; mergedCount = merged.updated; addedCount = merged.added;
+          targetName = copy[idx].name;
+          return copy;
+        }
+        const newIdx = copy.length;
+        const newSeason: Season = {
+          name: seasonName || `Season ${copy.length + 1}`,
+          seasonNumber: copy.length + 1,
+          episodes: episodes.map((ep: any, eIdx: number) => buildFreshEpisode(ep, eIdx)),
+        };
+        setExpandedSeasons(p => ({ ...p, [newIdx]: true }));
+        targetName = newSeason.name;
+        addedCount = episodes.length;
+        return [...copy, newSeason];
+      });
+      if (didMerge) toast.success(`"${targetName}": ${mergedCount} updated, ${addedCount} added (existing links preserved)`);
+      else toast.success(`${addedCount} episodes imported into "${targetName}"`);
+      setWsJsonImportMode(false);
+      setWsJsonPasteText('');
+    } catch (err: any) {
+      toast.error('JSON parse failed: ' + err.message);
+    }
+  };
+
+  const wsHandleJsonPaste = () => {
+    if (!wsJsonPasteText.trim()) { toast.error('Paste JSON text'); return; }
+    try {
+      const parsed = JSON.parse(wsJsonPasteText.trim());
+      wsParseJsonEpisodes(parsed);
+    } catch {
+      toast.error('Invalid JSON. Please provide valid JSON format.');
+    }
+  };
+
+  const wsHandleJsonFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    let processed = 0, failed = 0;
+    const totalFiles = files.length;
+    Array.from(files).forEach(file => {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        try {
+          const parsed = JSON.parse(ev.target?.result as string);
+          wsParseJsonEpisodes(parsed);
+          processed++;
+        } catch {
+          failed++;
+        }
+        if (processed + failed === totalFiles) {
+          if (failed > 0) toast.error(`${failed} files failed to parse`);
+          if (processed > 0) toast.success(`${processed} files imported successfully`);
+        }
+      };
+      reader.readAsText(file);
+    });
+    if (wsJsonFileRef.current) wsJsonFileRef.current.value = '';
+  };
+
+  // Per-season JSON import â€” SMART MERGE (only present fields overwrite)
+  const wsImportJsonToSeason = (sIdx: number, jsonData: any) => {
+    try {
+      let episodes: any[] = [];
+      if (Array.isArray(jsonData)) episodes = jsonData;
+      else if (jsonData.episodes && Array.isArray(jsonData.episodes)) episodes = jsonData.episodes;
+      else { toast.error('Invalid JSON. An episodes array is required.'); return; }
+      if (episodes.length === 0) { toast.error('No episodes found'); return; }
+      let updated = 0, added = 0;
+      setSeasonsData(prev => {
+        const copy = [...prev];
+        const merged = smartMergeEpisodesInto(copy[sIdx]?.episodes || [], episodes);
+        updated = merged.updated; added = merged.added;
+        copy[sIdx] = { ...copy[sIdx], episodes: merged.list };
+        return copy;
+      });
+      setExpandedSeasons(p => ({ ...p, [sIdx]: true }));
+      toast.success(`"${seasonsData[sIdx]?.name}": ${updated} updated, ${added} added â€” existing quality links preserved âœ“`);
+    } catch (err: any) {
+      toast.error('JSON parse failed: ' + err.message);
+    }
+  };
+
+ const wsHandleSeasonJsonFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+ const files = e.target.files;
+ if (!files || files.length === 0 || wsSeasonJsonTarget < 0) return;
+ const targetIdx = wsSeasonJsonTarget;
+ let processed = 0, failed = 0;
+ const totalFiles = files.length;
+  // Collect raw incoming episodes (KEEP original fields â€” merge later so
+  // empty qualities from one file don't wipe good links from another)
+  const allEpisodes: any[] = [];
+  Array.from(files).forEach(file => {
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+  try {
+  const parsed = JSON.parse(ev.target?.result as string);
+  let eps: any[] = [];
+  if (Array.isArray(parsed)) eps = parsed;
+  else if (parsed.episodes && Array.isArray(parsed.episodes)) eps = parsed.episodes;
+  eps.forEach((ep: any, eIdx: number) => {
+  // Keep raw â€” smartMergeEpisodesInto handles present-fields-only overwrite
+  allEpisodes.push({ ...ep, episodeNumber: ep.episodeNumber || ep.number || eIdx + 1 });
+  });
+  processed++;
+  } catch { failed++; }
+  if (processed + failed === totalFiles) {
+  if (allEpisodes.length > 0) {
+  let updated = 0, added = 0;
+  setSeasonsData(prev => {
+  const copy = [...prev];
+  const merged = smartMergeEpisodesInto(copy[targetIdx]?.episodes || [], allEpisodes);
+  updated = merged.updated; added = merged.added;
+  copy[targetIdx] = { ...copy[targetIdx], episodes: merged.list };
+  return copy;
+  });
+  setExpandedSeasons(p => ({ ...p, [targetIdx]: true }));
+  toast.success(`${updated} updated, ${added} added (from ${processed} files) â€” existing links preserved âœ“`);
+  }
+  if (failed > 0) toast.error(`${failed} files failed to parse`);
+  }
+ };
+ reader.readAsText(file);
+ });
+ if (wsSeasonJsonFileRef.current) wsSeasonJsonFileRef.current.value = '';
+ setWsSeasonJsonTarget(-1);
+ };
+
+ const updateSeasonName = (sIdx: number, name: string) => {
+ setSeasonsData(prev => {
+ const copy = [...prev]; copy[sIdx] = { ...copy[sIdx], name }; return copy;
+ });
+ };
+
+ const updateEpisodeLink = (sIdx: number, eIdx: number, link: string) => {
+ updateSeriesEpisodeLanguageLink(sIdx, eIdx, "link", link);
+ };
+
+ const updateEpisodeQualityLink = (sIdx: number, eIdx: number, quality: string, link: string) => {
+ updateSeriesEpisodeLanguageLink(sIdx, eIdx, quality, link);
+ };
+
+ // ============ MOVIE PARTS HELPERS ============
+ // Mirrors Web Series episode helpers, but simpler (one flat list, no season wrapping).
+ const addMoviePart = () => {
+   setMvPartsData(prev => {
+     const nextNum = (prev.reduce((m, p) => Math.max(m, Number(p.partNumber || 0)), 0) || prev.length) + 1;
+     return [...prev, { partNumber: nextNum, title: "", link: "", link480: "", link720: "", link1080: "", link4k: "" }];
+   });
+ };
+ const removeMoviePart = (idx: number) => {
+   if (!confirm("Remove this part?")) return;
+   setMvPartsData(prev => prev.filter((_, i) => i !== idx).map((p, i) => ({ ...p, partNumber: i + 1 })));
+ };
+ const updateMoviePartField = (idx: number, field: keyof MoviePartEditor, value: string | number) => {
+   setMvPartsData(prev => {
+     const copy = [...prev];
+     copy[idx] = { ...copy[idx], [field]: value } as MoviePartEditor;
+     return copy;
+   });
+ };
+
+ // Smart merge â€” same philosophy as smartMergeEpisodesInto but scoped to movie parts.
+ // Only non-empty fields in the incoming JSON overwrite existing values, so pasting a
+ // 480p-only JSON never wipes the 720p/1080p/4K links you already have.
+ const smartMergePartsInto = (existing: MoviePartEditor[], incoming: any[]) => {
+   const list = [...(existing || [])];
+   let updated = 0, added = 0;
+   incoming.forEach((raw: any, idx: number) => {
+     const num = Number(raw?.partNumber || raw?.number || idx + 1) || idx + 1;
+     const matchIdx = list.findIndex(p => Number(p.partNumber) === num);
+     const clean: any = {};
+     ["title", "link", "link480", "link720", "link1080", "link4k"].forEach(k => {
+       const v = raw?.[k] ?? raw?.[k.replace("link", "movieLink")];
+       if (v !== undefined && v !== null && String(v).trim() !== "") clean[k] = String(v).trim();
+     });
+     if (matchIdx >= 0) {
+       list[matchIdx] = { ...list[matchIdx], ...clean, partNumber: num };
+       updated++;
+     } else {
+       list.push({ partNumber: num, title: clean.title || `Part ${num}`, link: clean.link || "", link480: clean.link480, link720: clean.link720, link1080: clean.link1080, link4k: clean.link4k });
+       added++;
+     }
+   });
+   list.sort((a, b) => (a.partNumber || 0) - (b.partNumber || 0));
+   return { list, updated, added };
+ };
+
+ const mvParseJsonParts = (jsonData: any) => {
+   let parts: any[] = [];
+   if (Array.isArray(jsonData)) parts = jsonData;
+   else if (Array.isArray(jsonData?.parts)) parts = jsonData.parts;
+   else if (Array.isArray(jsonData?.episodes)) parts = jsonData.episodes;
+   else { toast.error("Invalid JSON. A parts array is required."); return; }
+   if (parts.length === 0) { toast.error("No parts found in the JSON"); return; }
+   let updated = 0, added = 0;
+   setMvPartsData(prev => {
+     const merged = smartMergePartsInto(prev, parts);
+     updated = merged.updated; added = merged.added;
+     return merged.list;
+   });
+   toast.success(`Parts: ${updated} updated, ${added} added â€” existing quality links preserved âœ“`);
+   setMvPartsJsonImportMode(false);
+   setMvJsonPasteText("");
+ };
+
+ const mvHandleJsonPaste = () => {
+   if (!mvJsonPasteText.trim()) { toast.error("Paste JSON text"); return; }
+   try { mvParseJsonParts(JSON.parse(mvJsonPasteText.trim())); }
+   catch { toast.error("Invalid JSON. Please provide valid JSON format."); }
+ };
+
+ const mvHandleJsonFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+   const files = e.target.files;
+   if (!files || files.length === 0) return;
+   let processed = 0, failed = 0;
+   const total = files.length;
+   const collected: any[] = [];
+   Array.from(files).forEach(file => {
+     const reader = new FileReader();
+     reader.onload = ev => {
+       try {
+         const parsed = JSON.parse(ev.target?.result as string);
+         let arr: any[] = [];
+         if (Array.isArray(parsed)) arr = parsed;
+         else if (Array.isArray(parsed?.parts)) arr = parsed.parts;
+         else if (Array.isArray(parsed?.episodes)) arr = parsed.episodes;
+         arr.forEach((p, i) => collected.push({ ...p, partNumber: p?.partNumber || p?.number || i + 1 }));
+         processed++;
+       } catch { failed++; }
+       if (processed + failed === total) {
+         if (collected.length > 0) {
+           let updated = 0, added = 0;
+           setMvPartsData(prev => { const merged = smartMergePartsInto(prev, collected); updated = merged.updated; added = merged.added; return merged.list; });
+           toast.success(`${updated} updated, ${added} added (from ${processed} files) â€” existing links preserved âœ“`);
+         }
+         if (failed > 0) toast.error(`${failed} files failed to parse`);
+       }
+     };
+     reader.readAsText(file);
+   });
+   if (mvJsonFileRef.current) mvJsonFileRef.current.value = "";
+ };
+
+
+ // ==================== AUTH HANDLERS ====================
+    const handlePinLogin = async () => {
+    if (!loginPinInput) { toast.error("Enter PIN"); return; }
+    // PIN-only login is allowed without prior Google verification.
+    // Google sign-in remains available as an optional alternative.
+   const blk = await isBlocked(null);
+   if (blk.blocked) {
+     await logAdminAccess({ method: "pin", success: false, reason: "blocked: " + (blk.reason || "") });
+     toast.error("Access denied: " + (blk.reason || "blocked"));
+     setLoginPinInput("");
+     return;
+   }
+   try {
+     // Route through EGD Router so the admin's own deployed verify-admin-pin
+     // URL (with their private ADMIN_PIN) takes precedence over the project
+      // saved URL. No hidden fallback is allowed.
+     let ok = false;
+     try {
+       const url = await getEdgeFunctionUrl("verify-admin-pin");
+       if (url) {
+         const res = await fetch(url, {
+           method: "POST",
+           headers: { "Content-Type": "application/json", apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` },
+           body: JSON.stringify({ pin: loginPinInput }),
+         });
+         const j = await res.json().catch(() => ({}));
+         ok = !!j?.ok;
+       }
+     } catch {}
+     if (!ok) {
+       logAdminAccess({ method: "pin", success: false, reason: "wrong-pin" });
+       toast.error("Wrong PIN");
+       setLoginPinInput("");
+       return;
+     }
+     setIsAuthenticated(true);
+     try {
+       sessionStorage.setItem("rs_admin_pin", loginPinInput);
+       localStorage.setItem("rs_admin_session", JSON.stringify({ method: "pin", ts: Date.now() }));
+     } catch {}
+     logAdminAccess({ method: "pin", success: true });
+     toast.success("Login successful!");
+     setLoginPinInput("");
+   } catch (e: any) {
+     logAdminAccess({ method: "pin", success: false, reason: "verify-error" });
+     toast.error("PIN verification failed");
+     setLoginPinInput("");
+   }
+   };
+
+ const handleCreatePin = () => {
+ toast.info("PIN is now managed via the ADMIN_PIN Lovable Cloud secret. Update it in project settings.");
+ };
+
+ const handleSetPin = () => {
+ toast.info("PIN is now managed via the ADMIN_PIN Lovable Cloud secret. Update it in project settings.");
+ setShowPinSetup(false);
+ };
+
+ const handleDisablePin = () => {
+ toast.info("PIN is enforced via the ADMIN_PIN secret and cannot be disabled from the UI.");
+ };
+
+ const handleLogout = () => {
+ setIsAuthenticated(false);
+ localStorage.removeItem("rs_admin_session");
+ localStorage.removeItem("rs_admin_google");
+ try { sessionStorage.removeItem("rs_admin_pin"); } catch {}
+ toast.success("Logged out");
+ };
+
+  // Google Sign-In for Admin
+  const handleGoogleAdminLogin = async () => {
+  setGoogleAuthLoading(true);
+  try {
+  const result = await signInWithPopup(auth, googleProvider);
+  const email = result.user.email;
+  if (!email) { toast.error("Could not get email from Google account"); return; }
+  // Block check â€” owner emails skip the block list.
+  const blk = await isBlocked(email);
+  if (blk.blocked) {
+    await logAdminAccess({ email, method: "google", success: false, reason: "blocked: " + (blk.reason || "") });
+    toast.error("Access denied: " + (blk.reason || "blocked"));
+    return;
+  }
+  // Check if this Google email is authorized as admin (owners always allowed)
+  const adminSnap = await get(ref(db, "admin/authorizedEmails"));
+  const authorizedEmails = adminSnap.val() || {};
+  const isAuthorized = isOwnerEmail(email) || Object.values(authorizedEmails).some((e: any) => e === email);
+  if (!isAuthorized) {
+  await logAdminAccess({ email, method: "google", success: false, reason: "not-authorized" });
+  toast.error("âŒ This Google account is not authorized as admin");
+  return;
+  }
+   setIsAuthenticated(true);
+   setAdminGoogleEmail(email);
+   const displayName = result.user.displayName || email.split("@")[0];
+   try {
+   localStorage.setItem("rs_admin_session", JSON.stringify({ google: email, ts: Date.now() }));
+   localStorage.setItem("rs_admin_google", email);
+   localStorage.setItem("rs_admin_google_name", displayName);
+   } catch {}
+   // Persist device â†’ name mapping so SecurityCenter can show a human name
+   // alongside the device fingerprint in subsequent PIN logins.
+   rememberDeviceName(displayName, email);
+   logAdminAccess({ email, name: displayName, method: "google", success: true });
+   toast.success(`âœ… Google Login successful! (${email})`);
+  } catch (err: any) {
+  logAdminAccess({ method: "google", success: false, reason: err?.message || "google-error" });
+  toast.error(err.message || "Google Login failed");
+  } finally {
+  setGoogleAuthLoading(false);
+  }
+  };
+
+ // Send Telegram Post
+ const sendTelegramPost = async () => {
+ if (!tgTitle.trim()) { toast.error("Enter a title"); return; }
+ if (!tgChannelId.trim()) { toast.error("Enter channel ID(s)"); return; }
+ setTgSending(true);
+  setAdminBusyTask("Sending Telegram postâ€¦");
+  await yieldAdminFrame();
+ try {
+ // Caption comes from the admin-editable template (series or movie).
+ const caption = buildTelegramCaption("html");
+
+
+ // Support multiple channel IDs separated by comma, newline, or space
+ const channelIds = tgChannelId
+ .split(/[,\n]+/)
+ .map(id => id.trim())
+ .filter(id => id.length > 0);
+
+ if (channelIds.length === 0) { toast.error("Enter at least one channel ID"); setTgSending(false); return; }
+
+ const results: { id: string; ok: boolean; error?: string; messageId?: number }[] = [];
+
+ // Build inline keyboard buttons array
+ const inlineButtons: { text: string; url: string }[] = [];
+ if (tgButtonLink) {
+ inlineButtons.push({ text: normalizeTelegramButtonText(tgDefaultButtonName), url: tgButtonLink });
+ }
+ tgButtons.forEach(btn => {
+ if (btn.name.trim() && btn.url.trim()) {
+ inlineButtons.push({ text: normalizeTelegramButtonText(btn.name.trim()), url: btn.url.trim() });
+ }
+ });
+
+  const selectedReleaseForPayload = releasesData.find(r => r.id === tgSelectedRelease || r.contentId === tgSelectedAnimeId);
+  const selectedContentTypeForPayload = String(selectedReleaseForPayload?.contentType || (moviesData.some(m => m.id === tgSelectedAnimeId) ? "movies" : "webseries"));
+  const telegramCollectionForPayload = selectedContentTypeForPayload === "movie" || selectedContentTypeForPayload === "movies" ? "movies" : "webseries";
+
+  for (const chatId of channelIds) {
+  await yieldAdminFrame();
+ const payload = {
+ chatId,
+ caption,
+ photoUrl: tgPosterUrl || undefined,
+ inlineButtons: inlineButtons.length > 0 ? inlineButtons : undefined,
+  collection: telegramCollectionForPayload,
+  seriesId: tgSelectedAnimeId || selectedReleaseForPayload?.contentId || undefined,
+ // Free Access button is controlled ENTIRELY by the global toggle at
+ // settings/telegramFreeAccess.enabled (read inside the edge function).
+ // Do NOT force-include here â€” that would bypass the OFF switch.
+ freeAccessUserId: "telegram_post",
+ };
+ try {
+ const endpoint = await getEdgeFunctionUrl('telegram-post');
+ const response = await fetch(endpoint, {
+ method: 'POST',
+ headers: {
+ 'Content-Type': 'application/json',
+ ...(SUPABASE_ANON_KEY ? { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` } : {}),
+ },
+ body: JSON.stringify(payload),
+ });
+ const rawText = await response.text();
+ const data = (() => {
+ if (!rawText) return {};
+ try {
+ return JSON.parse(rawText);
+ } catch {
+ return { rawText };
+ }
+ })();
+ if (!response.ok || data?.error) {
+ results.push({ id: chatId, ok: false, error: data?.error || 'API error' });
+ } else {
+ results.push({ id: chatId, ok: true, messageId: data?.result?.message_id || data?.message_id });
+ // Save to Firebase for future button URL editing
+ const msgId = data?.result?.message_id || data?.message_id;
+ if (msgId) {
+                const postRecord = {
+ chatId,
+ messageId: msgId,
+ title: tgTitle,
+ poster: tgPosterUrl || "",
+ caption,
+ buttons: inlineButtons,
+ sentAt: Date.now(),
+ };
+ try { await set(ref(db, `telegramPosts/${chatId.replace(/[^a-zA-Z0-9_-]/g, '_')}_${msgId}`), postRecord); } catch {}
+ }
+ }
+ } catch (err: any) {
+ results.push({ id: chatId, ok: false, error: err.message });
+ }
+ }
+
+ const successCount = results.filter(r => r.ok).length;
+ const failedResults = results.filter(r => !r.ok);
+ if (failedResults.length === 0) {
+ toast.success(`âœ… ${successCount} channel posts sent!`);
+ } else if (successCount > 0) {
+ toast.success(`âœ… ${successCount}/${channelIds.length} channels sent`);
+ failedResults.forEach(r => toast.error(`âŒ ${r.id}: ${r.error}`));
+ } else {
+ toast.error("Posting failed for all channels");
+ failedResults.forEach(r => toast.error(`âŒ ${r.id}: ${r.error}`));
+ }
+ } catch (err: any) {
+ toast.error("Telegram post failed: " + (err.message || "Unknown error"));
+ } finally {
+ setTgSending(false);
+  setAdminBusyTask(null);
+ }
+ };
+
+ // ============= BULK CATALOG BROADCAST =============
+ // Sends one Telegram message per channel containing N random anime (title + clickable link).
+ // Tracks sent IDs in Firebase so the SAME anime is never re-sent (no duplicates).
+ const sendBulkCatalogPost = async () => {
+ if (!tgChannelId.trim()) { toast.error("Enter channel ID(s)"); return; }
+ const batchSize = Math.max(1, Math.min(50, tgBulkBatchSize || 20));
+
+ // Build pool from admin-added webseries + movies
+ const pool = [
+ ...webseriesData.map((s: any) => ({ id: String(s.id), title: String(s.title || "").trim(), type: "webseries" as const })),
+ ...moviesData.map((m: any) => ({ id: String(m.id), title: String(m.title || "").trim(), type: "movie" as const })),
+ ].filter(it => it.id && it.title);
+
+ const remaining = pool.filter(it => !tgBulkSentIds[it.id]);
+ if (remaining.length === 0) {
+ toast.error("All anime already sent! Reset or add new animeà¥¤");
+ return;
+ }
+
+ // Random pick (no duplicate within batch + not previously sent)
+ const shuffled = [...remaining].sort(() => Math.random() - 0.5);
+ const picked = shuffled.slice(0, batchSize);
+
+ // Build professional HTML body â€” each anime in its own blockquote "box"
+ // Telegram renders <blockquote> with a colored left bar, giving each item a card-like feel.
+ const boxes = picked.map((it, i) => {
+ const num = String(i + 1).padStart(2, "0");
+  const url = buildEpisodeShareUrl(it.id);
+ const icon = it.type === "movie" ? "ğŸ¬" : "ğŸ“º";
+ const tag = it.type === "movie" ? "MOVIE" : "SERIES";
+ const title = escapeHtmlBasic(it.title);
+ return `<blockquote>${icon} <b>#${num}</b> â€¢ <i>${tag}</i>
+ğŸ¯ <a href="${url}"><b>${title}</b></a>
+â–¶ï¸ <a href="${url}">Tap to Watch Now</a></blockquote>`;
+ }).join("\n\n");
+
+ const headerText = escapeHtmlBasic(String(tgBulkHeader || "").replace(/<[^>]+>/g, "").trim()) || "Daily Drops";
+ const caption = `âœ¨ <b>${headerText}</b> âœ¨
+â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”
+
+${boxes}
+
+â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”
+${tgBulkFooter}
+ğŸŒ <a href="${SITE_URL}"><b>${SITE_URL.replace(/^https?:\/\//, "")}</b></a>`;
+
+ const channelIds = tgChannelId.split(/[,\n]+/).map(id => id.trim()).filter(Boolean);
+ if (channelIds.length === 0) { toast.error("Enter at least one channel ID"); return; }
+
+ setTgBulkSending(true);
+ setTgBulkProgress({ done: 0, total: channelIds.length });
+
+ let okCount = 0;
+ const failures: string[] = [];
+
+ try {
+ const endpoint = await getEdgeFunctionUrl('telegram-post');
+ for (let i = 0; i < channelIds.length; i++) {
+ const chatId = channelIds[i];
+ try {
+ const res = await fetch(endpoint, {
+ method: 'POST',
+ headers: {
+ 'Content-Type': 'application/json',
+ ...(SUPABASE_ANON_KEY ? { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` } : {}),
+ },
+ body: JSON.stringify({ chatId, caption, freeAccessUserId: "telegram_bulk" }),
+ });
+ const data = await res.json().catch(() => ({}));
+ if (!res.ok || data?.error) {
+ failures.push(`${chatId}: ${data?.error || 'API error'}`);
+ } else {
+ okCount++;
+ }
+ } catch (err: any) {
+ failures.push(`${chatId}: ${err.message || 'network error'}`);
+ }
+ setTgBulkProgress({ done: i + 1, total: channelIds.length });
+ }
+
+ // Persist sent IDs (only if at least one channel succeeded)
+ if (okCount > 0) {
+ const now = Date.now();
+ const updates: Record<string, number> = { ...tgBulkSentIds };
+ picked.forEach(it => { updates[it.id] = now; });
+ try { await set(ref(db, "telegramBulkBroadcast/sentIds"), updates); } catch {}
+ }
+
+ if (failures.length === 0) {
+ toast.success(`âœ… ${picked.length} anime, ${okCount} channels sent! (${remaining.length - picked.length} remaining)`);
+ } else if (okCount > 0) {
+ toast.success(`âœ… ${okCount}/${channelIds.length} channels succeeded`);
+ failures.slice(0, 3).forEach(f => toast.error(f));
+ } else {
+ toast.error("All channels failed");
+ failures.slice(0, 3).forEach(f => toast.error(f));
+ }
+ } finally {
+ setTgBulkSending(false);
+ setTimeout(() => setTgBulkProgress(null), 1500);
+ }
+ };
+
+ const resetBulkSentIds = async () => {
+ if (!confirm("Reset à¦•à¦°à¦²à§‡ all anime again send will goà¥¤ Are you sure?")) return;
+ try {
+ await set(ref(db, "telegramBulkBroadcast/sentIds"), null);
+ toast.success("âœ… Reset complete â€” all anime again send will go");
+ } catch (err: any) {
+ toast.error("Reset failed: " + (err.message || ""));
+ }
+ };
+
+ function escapeHtmlBasic(s: string): string {
+ return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+ }
+
+ function normalizeTelegramTitleKey(s: string): string {
+  return String(s || "")
+   .toLowerCase()
+   .replace(/#/g, " ")
+   .replace(/[^a-z0-9\u0980-\u09ff]+/g, " ")
+   .replace(/\s+/g, " ")
+   .trim();
+ }
+
+ function sanitizeTelegramHashtags(tags: string, title: string): string {
+  const titleKey = normalizeTelegramTitleKey(title);
+  return String(tags || "")
+   .split(/\s+/)
+   .map(tag => tag.trim())
+   .filter(Boolean)
+   .filter(tag => !/(official|fandub|á´Ò“Ò“Éªá´„Éªá´€ÊŸ|Ò“á´€É´á´…á´œÊ™|ğğŸğŸğ¢ğœğ¢ğšğ¥|ğ…ğšğ§ğğ®ğ›)/i.test(tag))
+   .filter(tag => normalizeTelegramTitleKey(tag) !== titleKey)
+   .join(" ");
+ }
+
+ function sanitizeTelegramCaption(caption: string, title: string): string {
+  return String(caption || "")
+    .replace(/#?ğ…ğšğ§ğğ®ğ›|#?fandub/gi, TG_DUB_TAGS.fandub)
+    .replace(/#?ğğŸğŸğ¢ğœğ¢ğšğ¥|#?official/gi, TG_DUB_TAGS.official)
+    .replace(/â–°â–±{1,}â–°/g, TG_DIVIDER)
+   .split("\n")
+   .map(line => {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("#")) return line;
+    return sanitizeTelegramHashtags(trimmed, title);
+   })
+   .filter(line => line.trim().length > 0)
+   .join("\n")
+   .trim();
+ }
+
+
+ // Fill telegram fields from release
+ const fillTelegramFromRelease = async (releaseId: string) => {
+ const release = releasesData.find(r => r.id === releaseId);
+ if (!release) return;
+ setTgSelectedRelease(releaseId);
+ setTgTitle(release.title || "");
+ // Use backdrop (landscape 16:9) instead of poster for Telegram
+ const posterUrl = release.poster || "";
+ // Try to get backdrop from content data for 16:9 image
+ const [cId, cType] = [release.contentId, release.contentType || "webseries"];
+ let backdropUrl = "";
+ if (cType === "webseries") {
+ const ws = (await getFullAdminContentItem("webseries", cId)) || webseriesData.find(s => s.id === cId);
+ if (ws?.backdrop) backdropUrl = ws.backdrop;
+ } else if (cType === "movie") {
+ const mv = (await getFullAdminContentItem("movies", cId)) || moviesData.find(m => m.id === cId);
+ if (mv?.backdrop) backdropUrl = mv.backdrop;
+ }
+ // Use backdrop if available (16:9), else fallback to poster with w500
+ if (backdropUrl) {
+ setTgPosterUrl(backdropUrl.replace('/original/', '/w1280/').replace('/w780/', '/w1280/'));
+ } else {
+ setTgPosterUrl(posterUrl.replace('/original/', '/w500/').replace('/w780/', '/w500/'));
+ }
+ if (release.episodeInfo) {
+ const epType = String(release.episodeInfo.type || "");
+ if (epType === "movie" || epType === "movie-parts" || release.contentType === "movie") {
+ // ğŸ¬ Movie auto-detection â€” never show "Episode" for movies.
+ setTgContentKind("movie");
+ setTgSeason("Movie");
+ const pStart = release.episodeInfo.partStart;
+ const pEnd = release.episodeInfo.partEnd;
+ const movieLabel = pStart
+   ? (pEnd && pEnd !== pStart ? `Part ${pStart}-${pEnd}` : `Part ${pStart}`)
+   : "Full Movie";
+ setTgMovieType(movieLabel);
+ setTgNewEpAdded(movieLabel);
+ } else {
+ setTgContentKind("series");
+ // Extract just the season number (e.g., "01", "02")
+ const seasonNum = release.episodeInfo.seasonNumber || '';
+ setTgSeason(String(seasonNum).padStart(2, '0'));
+ const startEp = String(release.episodeInfo.episodeNumber || '').padStart(2, '0');
+ const endEpRaw = release.episodeInfo.episodeNumberEnd;
+ const endEp = endEpRaw ? String(endEpRaw).padStart(2, '0') : '';
+ setTgNewEpAdded(endEp && endEp !== startEp ? `${startEp}-${endEp}` : startEp);
+ }
+ }
+
+ // Get quality info from content
+ const [contentId, contentType] = (release.contentId + "|" + release.contentType).split("|").length >= 2 
+ ? [release.contentId, release.contentType] : [release.contentId, "webseries"];
+ let qualities: string[] = [];
+ if (contentType === "webseries") {
+ const ws = (await getFullAdminContentItem("webseries", contentId)) || webseriesData.find(s => s.id === contentId);
+ if (ws?.seasons) {
+ ws.seasons.forEach((s: any) => {
+ s.episodes?.forEach((ep: any) => {
+ if (ep.link480) qualities.push("480p");
+ if (ep.link720) qualities.push("720p");
+ if (ep.link1080) qualities.push("1080p");
+ if (ep.link4k) qualities.push("4K");
+ });
+ });
+ }
+ } else if (contentType === "movie") {
+ const mv = (await getFullAdminContentItem("movies", contentId)) || moviesData.find(m => m.id === contentId);
+ if (mv?.link480) qualities.push("480p");
+ if (mv?.link720) qualities.push("720p");
+ if (mv?.link1080) qualities.push("1080p");
+ if (mv?.link4k) qualities.push("4K");
+ }
+ if (qualities.length > 0) {
+ setTgQuality([...new Set(qualities)].join(","));
+ }
+ // Count total episodes per-season using TMDB
+ if (contentType === "webseries") {
+ const ws = (await getFullAdminContentItem("webseries", contentId)) || webseriesData.find(s => s.id === contentId);
+ const seasonNum = release.episodeInfo?.seasonNumber || 1;
+ const tmdbId = ws?.tmdbId;
+ if (tmdbId) {
+ try {
+ const tmdbRes = await fetch(`${TMDB_BASE_URL}/tv/${tmdbId}/season/${seasonNum}?api_key=${TMDB_API_KEY}&language=en-US`);
+ const tmdbData = await tmdbRes.json();
+ if (tmdbData?.episodes?.length) {
+ setTgTotalEpisodes(String(tmdbData.episodes.length));
+ } else {
+ // Fallback to counting linked episodes in that specific season
+ const seasonIdx = (release.episodeInfo?.seasonNumber || 1) - 1;
+ const seasonEps = ws?.seasons?.[seasonIdx]?.episodes?.length || 0;
+ setTgTotalEpisodes(String(seasonEps));
+ }
+ } catch {
+ const seasonIdx = (release.episodeInfo?.seasonNumber || 1) - 1;
+ const seasonEps = ws?.seasons?.[seasonIdx]?.episodes?.length || 0;
+ setTgTotalEpisodes(String(seasonEps));
+ }
+ } else if (ws?.seasons) {
+ const seasonIdx = (release.episodeInfo?.seasonNumber || 1) - 1;
+ const seasonEps = ws?.seasons?.[seasonIdx]?.episodes?.length || 0;
+ setTgTotalEpisodes(String(seasonEps));
+ }
+ } else {
+ setTgTotalEpisodes("Movie");
+ }
+ // Set button link with deep link to the exact episode when available
+ const animeId = release.contentId || release.id;
+ const shareSeasonIdx = release.episodeInfo?.type === "movie" ? undefined : Math.max(0, Number(release.episodeInfo?.seasonNumber || 1) - 1);
+ const shareContent = contentType === "webseries" ? ((await getFullAdminContentItem("webseries", contentId)) || webseriesData.find(s => s.id === contentId)) : null;
+ const shareEpIdx = release.episodeInfo?.type === "movie" ? undefined : getEpisodeIndexForShare(shareContent?.seasons?.[shareSeasonIdx ?? 0], release.episodeInfo?.episodeNumber, 0);
+ setTgButtonLink(buildEpisodeShareUrl(animeId, shareSeasonIdx, shareEpIdx));
+ setTgSelectedAnimeId(String(animeId));
+ // Load saved per-anime custom buttons (if any)
+ try {
+ const safeId = String(animeId).replace(/[^a-zA-Z0-9_-]/g, "_");
+ const savedSnap = await get(ref(db, `telegramPerAnimeButtons/${safeId}`));
+ const saved = savedSnap.val();
+ if (saved && typeof saved === "object") {
+ if (typeof saved.defaultButtonName === "string" && saved.defaultButtonName.trim()) {
+ setTgDefaultButtonName(normalizeTelegramButtonText(saved.defaultButtonName));
+ }
+ if (Array.isArray(saved.buttons)) {
+ setTgButtons(saved.buttons.filter((b: any) => b && typeof b === "object").map((b: any) => ({
+ name: normalizeTelegramButtonText(String(b.name || "")),
+ url: String(b.url || ""),
+ })));
+ } else {
+ setTgButtons([]);
+ }
+ } else {
+ // No saved data â†’ reset to empty extras (keep default name as-is)
+ setTgButtons([]);
+ }
+ } catch {}
+ // Auto-set dub type from content
+ if (cType === "webseries") {
+ const ws = (await getFullAdminContentItem("webseries", cId)) || webseriesData.find(s => s.id === cId);
+ setTgDubType(ws?.dubType === "fandub" ? "fandub" : "official");
+ // Auto-set language from content
+ if (ws?.language) setTgLanguages(String(ws.language).replace(/\s*\/\s*/g, ", ").replace(/\s*\|\s*/g, ", "));
+ // Auto-fetch exact genres/rating from TMDB/AniList if tmdbId available
+  // Genres are ALWAYS fetched from TMDB (never from local category).
+  // If no tmdbId is stored, the resolver falls back to TMDB search-by-title.
+  if (ws?.tmdbId) setTgImdbId(String(ws.tmdbId));
+  {
+  const { genres, rating } = await resolveTelegramGenresAndRating(String(ws?.tmdbId || ""), ws?.title || release.title || "", ws?.category || "");
+  if (genres.length > 0) setTgGenres(genres.join(", "));
+  if (rating) setTgRating(rating);
+  else if (ws?.rating) setTgRating(String(ws.rating));
+  }
+  } else if (cType === "movie") {
+  const mv = (await getFullAdminContentItem("movies", cId)) || moviesData.find(m => m.id === cId);
+  setTgDubType(mv?.dubType === "fandub" ? "fandub" : "official");
+  if (mv?.language) setTgLanguages(String(mv.language).replace(/\s*\/\s*/g, ", ").replace(/\s*\|\s*/g, ", "));
+  if (mv?.tmdbId) setTgImdbId(String(mv.tmdbId));
+  {
+  const { genres, rating } = await resolveTelegramGenresAndRating(String(mv?.tmdbId || ""), mv?.title || release.title || "", mv?.category || "");
+  if (genres.length > 0) setTgGenres(genres.join(", "));
+  if (rating) setTgRating(rating);
+  else if (mv?.rating) setTgRating(String(mv.rating));
+  }
+ } else if (cType === "animesalt") {
+ setTgDubType("official");
+ }
+ };
+
+ // ==================== RENDER HELPERS ====================
+ const inputClass = "w-full px-3.5 py-2.5 bg-[#141422] border border-white/8 rounded-lg text-white text-sm focus:border-indigo-500 focus:outline-none transition-colors placeholder:text-zinc-500";
+ const selectClass = inputClass + " cursor-pointer";
+ const btnPrimary = "bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-lg transition-colors cursor-pointer border-none px-4 py-3 min-h-[44px] inline-flex items-center justify-center";
+ const btnSecondary = "bg-[#1E1E32] border border-white/8 text-white rounded-lg hover:bg-[#252540] transition-colors cursor-pointer";
+ const glassCard = "bg-[#16162A] border border-white/6 rounded-xl";
+
+ const menuItems: { section: Section; icon: React.ReactNode; label: string; group?: string }[] = [
+ { section: "dashboard", icon: <LayoutDashboard size={16} />, label: "Dashboard" },
+ { section: "categories", icon: <FolderOpen size={16} />, label: "Categories" },
+ { section: "webseries", icon: <Film size={16} />, label: "Web Series" },
+ { section: "weekly-episode", icon: <CalendarDays size={16} />, label: "Weekly Episode" },
+ { section: "movies", icon: <Video size={16} />, label: "Movies" },
+ { section: "users", icon: <Users size={16} />, label: "Users" },
+ { section: "comments", icon: <MessageCircle size={16} />, label: "Comments", group: "New Features" },
+ { section: "live-support", icon: <MessageCircle size={16} />, label: "Live Support" },
+ { section: "new-releases", icon: <Zap size={16} />, label: "New Releases" },
+ { section: "add-content", icon: <PlusCircle size={16} />, label: "Add Content", group: "Quick Actions" },
+ { section: "animesalt-manager", icon: <CloudDownload size={16} />, label: "AnimeSalt" },
+ { section: "tmdb-fetch", icon: <CloudDownload size={16} />, label: "TMDB Fetch" },
+ { section: "redeem-codes", icon: <Shield size={16} />, label: "Redeem Codes" },
+ { section: "bkash-payments", icon: <KeyRound size={16} />, label: "bKash Payments" },
+ { section: "premium-users", icon: <Crown size={16} />, label: "Premium Users" },
+ { section: "device-limits", icon: <Lock size={16} />, label: "Device Limits" },
+ { section: "telegram-post", icon: <Send size={16} />, label: "Telegram Post", group: "Sharing" },
+ { section: "tg-url-changer", icon: <RefreshCw size={16} />, label: "TG URL Changer" },
+ { section: "free-access", icon: <Eye size={16} />, label: "Free Access", group: "Tracking" },
+ 
+ { section: "analytics", icon: <BarChart3 size={16} />, label: "Analytics & Views" },
+ { section: "maintenance", icon: <Power size={16} />, label: "Maintenance", group: "Server" },
+ { section: "edge-router", icon: <Activity size={16} />, label: "Edge Router" },
+ { section: "email-service", icon: <Mail size={16} />, label: "Email Service" },
+ 
+ { section: "egd-manager", icon: <Bot size={16} />, label: "EGD MANAGER" },
+ { section: "cf-manager", icon: <Cloud size={16} />, label: "CLOUDFLARE MANAGER" },
+ { section: "adsterra", icon: <Activity size={16} />, label: "Adsterra Ads" },
+ { section: "backdrop-ai", icon: <Activity size={16} />, label: "Backdrop AI" },
+ { section: "apk-dw", icon: <Download size={16} />, label: "APK DW" },
+ { section: "fb-analytics", icon: <Database size={16} />, label: "FB Analytics" },
+ { section: "ai-config", icon: <MessageCircle size={16} />, label: "AI Config" },
+ { section: "branding", icon: <Edit size={16} />, label: "UI+AD Branding" },
+ { section: "live-tv", icon: <Activity size={16} />, label: "Live TV" },
+ { section: "url-changer", icon: <Link size={16} />, label: "URL Changer" },
+ { section: "link-checker", icon: <Search size={16} />, label: "Link Checker" },
+ { section: "video-servers", icon: <Activity size={16} />, label: "Video Servers" },
+ { section: "ui-themes", icon: <Zap size={16} />, label: "UI Themes", group: "Customization" },
+ { section: "hero-pinned", icon: <Star size={16} />, label: "Hero Pinned" },
+ { section: "settings", icon: <Settings size={16} />, label: "Settings" },
+   { section: "security-center", icon: <Shield size={16} />, label: "Security & Access", group: "Security" },
+   { section: "task-manager", icon: <Sparkles size={16} />, label: "Daily Task Manager", group: "Economy" },
+  
+  ];
+
+
+ // ==================== LOADING STATE ====================
+ if (pinExists === null) {
+ return (
+ <div className="min-h-screen bg-[#0D0D1A] flex items-center justify-center">
+ <div className="w-10 h-10 border-3 border-[#1E1E32] border-t-indigo-500 rounded-full animate-spin" />
+ </div>
+ );
+ }
+
+ // ==================== CREATE PIN SCREEN (first time) ====================
+ if (!pinExists && !isAuthenticated) {
+ return (
+ <div className="min-h-screen bg-[#0D0D1A] flex items-center justify-center p-4">
+ <div className={`${glassCard} p-8 w-full max-w-[400px]`}>
+ <div className="text-center mb-8">
+ <div className="w-14 h-14 bg-indigo-600 rounded-2xl flex items-center justify-center text-2xl font-black mx-auto mb-4"></div>
+ <h1 className="text-xl font-bold text-white">Create Admin PIN</h1>
+ <p className="text-sm text-zinc-400 mt-1">Set up your admin PIN</p>
+ </div>
+ <div className="space-y-4">
+ <input value={createPinInput} onChange={e => setCreatePinInput(e.target.value.replace(/\D/g, ""))}
+ className={`${inputClass} text-center text-2xl tracking-[10px] font-bold`}
+ placeholder="PIN" type="password" maxLength={8} />
+ <input value={createPinConfirm} onChange={e => setCreatePinConfirm(e.target.value.replace(/\D/g, ""))}
+ className={`${inputClass} text-center text-2xl tracking-[10px] font-bold`}
+ placeholder="Confirm PIN" type="password" maxLength={8}
+ onKeyDown={e => e.key === "Enter" && handleCreatePin()} />
+ <button onClick={handleCreatePin}
+ className={`${btnPrimary} w-full py-3 flex items-center justify-center gap-2`}>
+ <KeyRound size={16} />
+ Create PIN
+ </button>
+ </div>
+ </div>
+ </div>
+ );
+ }
+
+ // ==================== LOGIN SCREEN (PIN + Email/Pass + Google) ====================
+ if (!isAuthenticated) {
+ return (
+ <div className="min-h-screen bg-[#0D0D1A] flex items-center justify-center p-4">
+ <div className={`${glassCard} p-8 w-full max-w-[400px]`}>
+ <div className="text-center mb-8">
+ {adminBranding.logoUrl ? (
+ <CachedImg src={adminBranding.logoUrl} alt={adminBranding.siteName || "Logo"} className="w-14 h-14 rounded-2xl object-cover mx-auto mb-4 ring-1 ring-white/10" loading="lazy" decoding="async" />
+ ) : (
+ <div className="w-14 h-14 bg-indigo-600 rounded-2xl flex items-center justify-center text-2xl font-black mx-auto mb-4">{(adminBranding.siteName || "A").charAt(0)}</div>
+ )}
+  <h1 className="text-xl font-bold text-white">Admin Login</h1>
+  <p className="text-sm text-zinc-400 mt-1">{adminBranding.adminTitle || "Admin Panel"}</p>
+  </div>
+   {(() => {
+     const googleVerified = (() => { try { return !!localStorage.getItem("rs_admin_google"); } catch { return false; } })();
+     const verifiedName = (() => { try { return localStorage.getItem("rs_admin_google_name") || localStorage.getItem("rs_admin_google") || ""; } catch { return ""; } })();
+     return (
+   <div className="space-y-4">
+     {googleVerified && (
+       <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+         <div className="flex items-center gap-2 min-w-0">
+           <Shield size={14} className="text-emerald-400 shrink-0" />
+           <span className="text-[11px] text-emerald-300 truncate">Device verified Â· {verifiedName}</span>
+         </div>
+         <button
+           type="button"
+           onClick={() => { try { localStorage.removeItem("rs_admin_google"); localStorage.removeItem("rs_admin_google_name"); } catch {} ; window.location.reload(); }}
+           className="text-[10px] text-zinc-400 hover:text-white underline">Reset</button>
+       </div>
+     )}
+     <input value={loginPinInput} onChange={e => setLoginPinInput(e.target.value.replace(/\D/g, ""))}
+     className={`${inputClass} text-center text-2xl tracking-[10px] font-bold`}
+     placeholder="Enter PIN" type="password" maxLength={8}
+     onKeyDown={e => e.key === "Enter" && handlePinLogin()} />
+     <button onClick={handlePinLogin}
+     className={`${btnPrimary} w-full py-3 flex items-center justify-center gap-2`}>
+     <Lock size={16} />
+     Login with PIN
+     </button>
+     <div className="relative flex items-center my-2">
+     <div className="flex-1 h-px bg-white/10" />
+     <span className="px-3 text-[11px] text-zinc-500">or</span>
+     <div className="flex-1 h-px bg-white/10" />
+     </div>
+
+   <button onClick={handleGoogleAdminLogin} disabled={googleAuthLoading}
+   className="w-full py-3 flex items-center justify-center gap-2.5 bg-white/5 border border-white/10 rounded-lg hover:bg-white/10 transition-colors text-sm font-medium text-white disabled:opacity-50">
+   {googleAuthLoading ? (
+   <div className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+   ) : (
+   <svg width="18" height="18" viewBox="0 0 24 24">
+   <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/>
+   <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+   <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+   <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+   </svg>
+   )}
+   Sign in with Google (optional)
+   </button>
+
+   <p className="text-[10px] text-zinc-600 text-center mt-2">
+   ğŸ”’ PIN login is enabled by default. Google sign-in is optional.
+   </p>
+   </div>
+     );
+   })()}
+  </div>
+  </div>
+  );
+  }
+
+  return (
+ <div className="admin-shell min-h-screen bg-[#0D0D1A] text-white font-['Poppins',sans-serif]">
+ {/* Fetching Overlay */}
+ {fetchingOverlay && (
+   <div className="admin-isolated-overlay pointer-events-none fixed right-3 top-3 z-[5000] flex items-center gap-2 rounded-xl border border-indigo-500/25 bg-[#10101f]/95 px-3 py-2 shadow-xl backdrop-blur-md">
+  <div className="w-4 h-4 border-2 border-[#1E1E32] border-t-indigo-500 rounded-full animate-spin" />
+  <p className="text-xs text-zinc-300">Fetching dataâ€¦</p>
+ </div>
+ )}
+
+  {adminBusyTask && (
+   <div className="admin-isolated-overlay pointer-events-none fixed right-3 bottom-4 z-[5000] flex items-center gap-2 rounded-xl border border-emerald-500/25 bg-[#10101f]/95 px-3 py-2 shadow-xl backdrop-blur-md">
+  <div className="w-4 h-4 border-2 border-[#1E1E32] border-t-emerald-400 rounded-full animate-spin" />
+  <p className="text-xs text-zinc-300">{adminBusyTask}</p>
+  </div>
+  )}
+
+ {/* Push progress overlay removed â€” FCM disabled site-wide */}
+
+ {showPinSetup && (
+ <div className="admin-isolated-overlay fixed inset-0 bg-black/80 z-[5000] flex items-center justify-center p-4" onClick={() => setShowPinSetup(false)}>
+ <div className={`${glassCard} p-6 w-full max-w-[350px]`} onClick={e => e.stopPropagation()}>
+ <h3 className="text-base font-bold text-white mb-4 flex items-center gap-2">
+ <KeyRound size={18} className="text-indigo-500" /> {pinExists ? "Change PIN" : "Set PIN"}
+ </h3>
+ <input value={newPinInput} onChange={e => setNewPinInput(e.target.value.replace(/\D/g, ""))}
+ className={`${inputClass} text-center text-xl tracking-[8px] font-bold mb-4`}
+ placeholder="Enter PIN" type="password" maxLength={8} onKeyDown={e => e.key === "Enter" && handleSetPin()} />
+ <div className="flex gap-2">
+ <button onClick={() => setShowPinSetup(false)} className={`${btnSecondary} flex-1 py-2.5 text-sm`}>Cancel</button>
+ <button onClick={handleSetPin} className={`${btnPrimary} flex-1 py-2.5 text-sm`}>Save PIN</button>
+ </div>
+ </div>
+ </div>
+ )}
+
+ {/* Overlay */}
+ {sidebarOpen && <div className="admin-isolated-overlay fixed inset-0 bg-black/60 z-[999]" onClick={() => setSidebarOpen(false)} />}
+
+ {/* Sidebar */}
+ <div className={`admin-isolated-overlay fixed top-0 ${sidebarOpen ? "left-0" : "-left-[260px]"} w-[260px] h-screen bg-[#111120] z-[1000] transition-all duration-200 border-r border-white/6 flex flex-col`}>
+ <div className="p-4 border-b border-white/6">
+ <div className="flex items-center gap-3">
+ {adminBranding.logoUrl ? (
+ <CachedImg src={adminBranding.logoUrl} alt={adminBranding.siteName || "Logo"} className="w-10 h-10 rounded-xl object-cover ring-1 ring-white/10" loading="lazy" decoding="async" />
+ ) : (
+ <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-lg font-black">{(adminBranding.siteName || "A").charAt(0)}</div>
+ )}
+ <div>
+ <h2 className="text-base font-bold text-white">Admin Panel</h2>
+ <p className="text-[10px] text-zinc-500">{adminBranding.siteName}</p>
+ </div>
+ </div>
+ </div>
+
+ <div className="flex-1 overflow-y-auto py-3">
+ {menuItems.map((item, i) => (
+ <div key={item.section}>
+ {item.group && <p className="px-4 py-2 text-[10px] text-zinc-600 uppercase tracking-[2px] font-semibold">{item.group}</p>}
+ <div
+ onClick={() => showSection(item.section)}
+ className={`px-4 py-2.5 flex items-center gap-3 cursor-pointer border-l-[3px] transition-colors mx-0 my-0.5 ${
+ activeSection === item.section ? "bg-indigo-500/10 border-l-indigo-500 text-indigo-400" : "border-l-transparent hover:bg-white/3 text-zinc-400"
+ }`}
+ >
+ <span>{item.icon}</span>
+ <span className="text-[13px]">{item.label}</span>
+ </div>
+ </div>
+ ))}
+ </div>
+
+ <div className="p-3 border-t border-white/6">
+ <div className="flex items-center gap-2 p-2.5 bg-black/20 rounded-lg">
+ <div className={`w-2 h-2 rounded-full ${firebaseConnected ? "bg-green-500" : "bg-red-500"}`} />
+ <span className={`text-[11px] ${firebaseConnected ? "text-green-400" : "text-zinc-500"}`}>
+ Firebase: {firebaseConnected ? "Connected" : "Disconnected"}
+ </span>
+ </div>
+ </div>
+ </div>
+
+ {/* Header */}
+ <header className="fixed top-0 left-0 right-0 h-[56px] bg-[#0D0D1A]/95 z-[100] flex items-center justify-between px-3 border-b border-white/6">
+ <div className="flex items-center gap-2.5">
+ <button onClick={() => setSidebarOpen(true)} className="w-9 h-9 rounded-lg bg-white/5 flex items-center justify-center hover:bg-indigo-500/20 transition-colors">
+ <Menu size={18} />
+ </button>
+ <span className="text-xl font-black text-indigo-500"></span>
+ <h1 className="text-sm font-semibold text-zinc-200">{sectionTitles[activeSection]}</h1>
+ </div>
+ <div className="flex items-center gap-2 relative">
+ <div className="bg-indigo-600/20 border border-indigo-500/30 px-2.5 py-1 rounded-full text-[11px] font-semibold flex items-center gap-1.5 text-indigo-300">
+ <Shield size={11} />
+ Admin
+ </div>
+ <button onClick={() => setDropdownOpen(!dropdownOpen)} className="w-9 h-9 rounded-lg bg-white/5 flex items-center justify-center hover:bg-white/10 transition-colors">
+ <MoreVertical size={16} />
+ </button>
+ {dropdownOpen && (
+ <div className="absolute right-0 top-[48px] w-[200px] bg-[#16162A] border border-white/8 rounded-lg overflow-hidden z-[200]">
+ <div onClick={refreshData} className="px-3.5 py-3 flex items-center gap-2.5 text-[13px] hover:bg-white/5 cursor-pointer transition-colors">
+ <RefreshCw size={14} className="text-indigo-400" /> Refresh Data
+ </div>
+ <div onClick={() => { showSection("add-content"); setDropdownOpen(false); }} className="px-3.5 py-3 flex items-center gap-2.5 text-[13px] hover:bg-white/5 cursor-pointer transition-colors">
+ <Plus size={14} className="text-indigo-400" /> Add Content
+ </div>
+ <div onClick={exportData} className="px-3.5 py-3 flex items-center gap-2.5 text-[13px] hover:bg-white/5 cursor-pointer transition-colors">
+ <Download size={14} className="text-indigo-400" /> Export Data
+ </div>
+ <div onClick={() => { setShowPinSetup(true); setDropdownOpen(false); }} className="px-3.5 py-3 flex items-center gap-2.5 text-[13px] hover:bg-white/5 cursor-pointer transition-colors">
+ <KeyRound size={14} className="text-indigo-400" /> {pinExists ? "Change PIN" : "Set PIN"}
+ </div>
+ {pinExists && (
+ <div onClick={() => { handleDisablePin(); setDropdownOpen(false); }} className="px-3.5 py-3 flex items-center gap-2.5 text-[13px] hover:bg-white/5 cursor-pointer transition-colors text-yellow-400">
+ <Lock size={14} /> Disable PIN
+ </div>
+ )}
+ <div onClick={() => { if (confirm("Clear cache?")) { localStorage.clear(); toast.success("Cache cleared!"); setTimeout(() => window.location.reload(), 1500); } setDropdownOpen(false); }}
+ className="px-3.5 py-3 flex items-center gap-2.5 text-[13px] hover:bg-white/5 cursor-pointer transition-colors text-red-400">
+ <Trash2 size={14} /> Clear Cache
+ </div>
+ <div onClick={() => { handleLogout(); setDropdownOpen(false); }}
+ className="px-3.5 py-3 flex items-center gap-2.5 text-[13px] hover:bg-white/5 cursor-pointer transition-colors text-red-400 border-t border-white/6">
+ <LogOut size={14} /> Logout
+ </div>
+ </div>
+ )}
+ </div>
+ </header>
+
+ {/* Main Content */}
+<main className="admin-scroll-smooth pt-[64px] px-3 pb-[220px] min-h-screen">
+ {/* ==================== DASHBOARD ==================== */}
+ {activeSection === "dashboard" && (
+ <div>
+ {/* Quick action: Telegram Post (replaces removed FCM notification bell) */}
+ <button
+ onClick={() => showSection("telegram-post")}
+ className="w-full mb-3 p-3 rounded-xl bg-gradient-to-r from-blue-600/20 to-cyan-600/20 border border-blue-500/40 flex items-center gap-3 hover:from-blue-600/30 hover:to-cyan-600/30 transition-all"
+ >
+ <div className="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center text-blue-300">
+ <Send size={18} />
+ </div>
+ <div className="flex-1 text-left">
+ <p className="text-[13px] font-bold text-white">Telegram Post</p>
+ <p className="text-[10.5px] text-zinc-400">Quick post to your channel</p>
+ </div>
+ <ChevronRight size={16} className="text-blue-300" />
+ </button>
+
+ <div className="grid grid-cols-2 gap-2.5 mb-4">
+ {[
+  { icon: <Film size={18} />, value: adminFastCounts.webseries || webseriesData.length, label: "Web Series", color: "text-indigo-400" },
+  { icon: <Video size={18} />, value: adminFastCounts.movies || moviesData.length, label: "Movies", color: "text-emerald-400" },
+  { icon: <FolderOpen size={18} />, value: totalCategories, label: "Categories", color: "text-amber-400" },
+  { icon: <Users size={18} />, value: adminFastCounts.users || usersData.length, label: "Total Users", color: "text-sky-400" },
+ ].map((stat, i) => (
+ <div key={i} className="bg-[#141422] border border-white/5 rounded-xl p-4">
+ <div className={`w-9 h-9 bg-white/5 rounded-lg flex items-center justify-center mb-2.5 ${stat.color}`}>{stat.icon}</div>
+ <div className="text-2xl font-bold text-white">{stat.value}</div>
+ <div className="text-[11px] text-zinc-500 mt-0.5">{stat.label}</div>
+ </div>
+ ))}
+ </div>
+
+ {/* Weekly Episode preview (between Series stats and Telegram quick action area) */}
+ <div className={`${glassCard} p-4 mb-3 relative overflow-hidden`}>
+ <div className="absolute -top-10 -right-10 w-32 h-32 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
+ <div className="relative">
+ <div className="flex items-center justify-between mb-3">
+ <div className="flex items-center gap-2">
+ <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/30">
+ <CalendarDays size={16} className="text-white" />
+ </div>
+ <div>
+ <h3 className="text-sm font-bold text-white">Weekly Episode</h3>
+ <p className="text-[10.5px] text-zinc-400">Today ({todayDayName}) â€” {todayScheduled.length} scheduled</p>
+ </div>
+ </div>
+ <button onClick={() => showSection("weekly-episode")}
+ className="text-[11px] font-semibold text-indigo-300 bg-indigo-500/15 border border-indigo-500/30 px-2.5 py-1.5 rounded-lg flex items-center gap-1 hover:bg-indigo-500/25 transition">
+ Manage <ChevronRight size={12} />
+ </button>
+ </div>
+
+ {todayScheduled.length === 0 ? (
+ <button onClick={() => showSection("weekly-episode")}
+ className="w-full text-[12px] text-zinc-400 bg-[#141422] border border-dashed border-white/10 hover:border-indigo-500/40 rounded-lg py-4">
+ No anime scheduled for today â€” tap to add
+ </button>
+ ) : (
+ <div className="flex gap-2 overflow-x-auto scrollbar-hide -mx-1 px-1 pb-1">
+ {todayScheduled.slice(0, 8).map((it: any) => (
+ <button key={it.seriesId} onClick={() => editSeries(it.seriesId)}
+ className="flex-shrink-0 w-[78px] group">
+ <CachedImg src={it.poster || ""} className="w-[78px] h-[108px] rounded-lg object-cover border border-white/8 group-hover:border-indigo-500/50 transition"
+ onError={e => { (e.target as HTMLImageElement).src = "https://via.placeholder.com/78x108/141422/6366f1?text=N"; }} />
+ <p className="text-[10px] text-zinc-300 truncate mt-1">{it.title}</p>
+ </button>
+ ))}
+ </div>
+ )}
+ </div>
+ </div>
+
+ <div className={`${glassCard} p-4 mb-3`}>
+ <h3 className="text-sm font-semibold mb-2.5">User Activity</h3>
+ <div className="flex gap-4 items-center">
+ <div className="flex items-center gap-1.5">
+ <div className="w-2 h-2 rounded-full bg-green-500" />
+ <span className="text-[13px] text-zinc-300">Online: <strong>{onlineUsers}</strong></span>
+ </div>
+ <div className="flex items-center gap-1.5">
+ <div className="w-2 h-2 rounded-full bg-red-500" />
+ <span className="text-[13px] text-zinc-300">Offline: <strong>{offlineUsers}</strong></span>
+ </div>
+ </div>
+ </div>
+
+ <div className={`${glassCard} p-4 mb-3`}>
+ <h3 className="text-sm font-semibold mb-3">Recent Content</h3>
+ {recentContent.length === 0 ? (
+ <p className="text-zinc-500 text-[13px] text-center py-4">No recent content</p>
+ ) : (
+ recentContent.map((item, i) => (
+ <button
+ type="button"
+ key={`${item._adminKind}-${item.id || i}`}
+ onClick={() => item._adminKind === "movie" ? editMovie(item.id) : editSeries(item.id)}
+ className="w-full text-left flex items-center gap-3 p-2.5 bg-black/20 rounded-lg mb-2 border border-transparent hover:border-indigo-500/35 hover:bg-indigo-500/10 active:scale-[0.99] transition-all"
+ >
+ <CachedImg src={item.poster || ""} alt={item.title || "Recent content"} className="w-10 h-[55px] rounded-md object-cover flex-shrink-0" onError={(e) => { (e.target as HTMLImageElement).src = "https://via.placeholder.com/40x55/141422/6366f1?text=N"; }} />
+ <div className="flex-1 min-w-0">
+ <p className="text-[13px] font-medium truncate">{item.title || "Untitled"}</p>
+ <p className="text-[11px] text-zinc-500">{item._adminKind === "movie" ? "Movie" : "Series"} â€¢ {item.year || "N/A"}</p>
+ </div>
+ <ChevronRight size={14} className="text-zinc-500 flex-shrink-0" />
+ </button>
+ ))
+ )}
+ </div>
+
+ <div className="grid grid-cols-2 gap-2.5 mt-4">
+ <button onClick={() => { showSection("webseries"); setSeriesTab("ws-add"); }} className={`${btnPrimary} py-4 px-4 flex flex-col items-center gap-2 text-[13px]`}>
+ <Plus size={22} /> Add Series
+ </button>
+ <button onClick={() => { showSection("movies"); setMoviesTab("mv-add"); }} className={`${btnSecondary} py-4 px-4 flex flex-col items-center gap-2 text-[13px]`}>
+ <Plus size={22} /> Add Movie
+ </button>
+ </div>
+ </div>
+ )}
+
+ {/* ==================== CATEGORIES ==================== */}
+ {activeSection === "categories" && (
+ <div>
+ <div className={`${glassCard} p-4 mb-4`}>
+ <h3 className="text-sm font-semibold mb-3.5">Add New Category</h3>
+ <div className="flex gap-2.5">
+ <input value={categoryInput} onChange={e => setCategoryInput(e.target.value)} onKeyDown={e => e.key === "Enter" && saveCategory()}
+ className={`${inputClass} flex-1`} placeholder="Category name" />
+ <button onClick={saveCategory} className={`${btnPrimary} px-5 py-3.5`}><Plus size={18} /></button>
+ </div>
+ </div>
+ <div className={`${glassCard} p-4`}>
+ <h3 className="text-sm font-semibold mb-3.5">All Categories</h3>
+ {categoryList.length === 0 ? (
+ <p className="text-[#957DAD] text-[13px] text-center py-5">No categories yet</p>
+ ) : categoryList.map(cat => (
+ <div key={cat.id} className="bg-[#1A1A2E] border border-white/5 rounded-[14px] p-3.5 flex justify-between items-center mb-2">
+ <span className="text-sm font-medium">{cat.name}</span>
+ <div className="flex gap-2">
+ <button onClick={() => editCategory(cat.id, cat.name)} className="bg-blue-500/20 text-blue-400 p-2 rounded-lg"><Edit size={14} /></button>
+ <button onClick={() => deleteCategory(cat.id)} className="bg-pink-500/20 text-pink-500 p-2 rounded-lg"><Trash2 size={14} /></button>
+ </div>
+ </div>
+ ))}
+ </div>
+
+ {/* Bulk Category Assignment */}
+ <div className={`${glassCard} p-4 mt-4`}>
+ <h3 className="text-sm font-semibold mb-3.5 flex items-center gap-2">
+ <List size={14} className="text-indigo-400" /> Bulk Anime Category Assignment
+ </h3>
+ <p className="text-[11px] text-zinc-400 mb-3">Select multiple anime and set their category together.</p>
+ <div className="flex gap-2 mb-3">
+ <div className="relative flex-1">
+ <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
+ <input value={catBulkSearch} onChange={e => setCatBulkSearch(e.target.value)}
+ className={`${inputClass} pl-9`} placeholder="Search anime..." />
+ </div>
+ <select value={catBulkCategory} onChange={e => setCatBulkCategory(e.target.value)} className={`${selectClass} w-[140px]`}>
+ <option value="">Category</option>
+ {categoryList.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+ </select>
+ </div>
+ {catBulkSelected.length > 0 && catBulkCategory && (
+ <button onClick={() => {
+ const updates: Record<string, any> = {};
+ catBulkSelected.forEach(id => {
+ const isWs = webseriesData.find(w => w.id === id);
+ const path = isWs ? `webseries/${id}/category` : `movies/${id}/category`;
+ updates[path] = catBulkCategory;
+ });
+ update(ref(db), updates)
+ .then(() => { toast.success(`${catBulkSelected.length} anime "${catBulkCategory}" category set done!`); setCatBulkSelected([]); })
+ .catch(err => toast.error("Error: " + err.message));
+ }} className={`${btnPrimary} w-full py-2.5 text-[12px] mb-3 flex items-center justify-center gap-2`}>
+ <Save size={14} /> {catBulkSelected.length} selected â†’ "{catBulkCategory}" Set
+ </button>
+ )}
+ {catBulkSelected.length > 0 && (
+ <button onClick={() => setCatBulkSelected([])} className="text-[11px] text-zinc-500 hover:text-zinc-300 mb-2 underline">Clear all selections</button>
+ )}
+ <div className="max-h-[400px] overflow-y-auto space-y-1.5">
+ {(() => {
+ const allItems = [...webseriesData.map(w => ({ ...w, _type: "series" })), ...moviesData.map(m => ({ ...m, _type: "movie" }))];
+ const filtered = catBulkSearch.trim()
+ ? allItems.filter(item => item.title?.toLowerCase().includes(catBulkSearch.toLowerCase()))
+ : allItems;
+ return filtered.length === 0 ? (
+ <p className="text-zinc-500 text-[12px] text-center py-4">No anime found</p>
+ ) : filtered.map(item => {
+ const isSelected = catBulkSelected.includes(item.id);
+ return (
+ <div key={item.id} onClick={() => setCatBulkSelected(prev => isSelected ? prev.filter(id => id !== item.id) : [...prev, item.id])}
+ className={`flex items-center gap-2.5 p-2 rounded-lg cursor-pointer transition-all ${isSelected ? "bg-indigo-600/20 border border-indigo-500/40" : "bg-[#141422] border border-transparent hover:border-white/10"}`}>
+ <div className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-all ${isSelected ? "bg-indigo-600 border-indigo-500" : "border-zinc-600"}`}>
+ {isSelected && <Check size={12} />}
+ </div>
+ <CachedImg src={item.poster || ""} className="w-8 h-11 rounded object-cover flex-shrink-0 bg-[#1E1E32]"
+ onError={e => { (e.target as HTMLImageElement).src = "https://via.placeholder.com/32x44/141422/6366f1?text=N"; }} />
+ <div className="flex-1 min-w-0">
+ <p className="text-[12px] font-medium truncate">{item.title || "Untitled"}</p>
+ <p className="text-[10px] text-zinc-500">{item._type === "series" ? "Series" : "Movie"} â€¢ {item.category || "No Category"}</p>
+ </div>
+ </div>
+ );
+ });
+ })()}
+ </div>
+ </div>
+ </div>
+ )}
+
+ {/* ==================== WEB SERIES ==================== */}
+ {activeSection === "webseries" && (
+ <div>
+ <div className="flex gap-2 overflow-x-auto pb-2 mb-3 scrollbar-hide">
+ <button onClick={() => setSeriesTab("ws-list")} className={`flex-shrink-0 px-4 py-2 rounded-lg text-[13px] font-medium transition-colors ${seriesTab === "ws-list" ? "bg-indigo-600 text-white" : "bg-[#141422] border border-white/8 text-zinc-400"}`}>
+ All Series
+ </button>
+ <button onClick={() => setSeriesTab("ws-add")} className={`flex-shrink-0 px-4 py-2 rounded-lg text-[13px] font-medium transition-colors ${seriesTab === "ws-add" ? "bg-indigo-600 text-white" : "bg-[#141422] border border-white/8 text-zinc-400"}`}>
+ Add New
+ </button>
+ <button onClick={() => { setSeriesTab("ws-manual"); setSeriesEditId(""); const initialSeasons = [{ name: "Season 1", seasonNumber: 1, episodes: [] }]; const initialMap = { Hindi: initialSeasons }; setSeriesForm(syncSeriesLanguageSummary({ title: "", poster: "", backdrop: "", year: "", rating: "", language: "Hindi", baseLanguage: "Hindi", selectedAdminLanguage: "Hindi", availableLanguages: ["Hindi"], category: "", storyline: "", visibility: "public", dubType: "official", weeklyEnabled: false, weeklyEveryDays: 7, weeklyDaysSinceLast: 0, audioTracks: [] }, initialMap)); setSeriesSeasonsByLanguage(initialMap); setSeasonsData(cloneSeasonList(initialSeasons)); setSeriesCast([]); }} className={`flex-shrink-0 px-4 py-2 rounded-lg text-[13px] font-medium transition-colors ${seriesTab === "ws-manual" ? "bg-emerald-600 text-white" : "bg-[#141422] border border-white/8 text-zinc-400"}`}>
+ Manual
+ </button>
+   {/* AN Series tab removed â€” AN now runs purely on API, no Firebase storage */}
+   </div>
+
+ {seriesTab === "ws-list" && (
+ <div>
+ {/* Search bar â€” pinned to the very top of the admin viewport */}
+ <div className="sticky top-0 z-40 -mx-3 px-3 py-2 mb-3 bg-[#0D0D1A]/95 backdrop-blur-md border-b border-white/5">
+ <div className="relative">
+ <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-purple-500" />
+ <input value={wsListSearch} onChange={e => setWsListSearch(e.target.value)}
+ className={`${inputClass} pl-9`} placeholder="Search series" />
+ </div>
+ </div>
+ {(() => {
+  const q = deferredWsListSearch.trim().toLowerCase();
+ const filtered = filteredWebseriesAdminList;
+  const visible = filtered.slice(0, wsListLimit);
+  return filtered.length === 0 ? (
+ adminContentLoading.webseries && !q ? (
+ <div className="space-y-3 py-2">
+ {[0, 1, 2, 3].map(i => <div key={i} className="h-[145px] rounded-[14px] border border-white/5 bg-[#1A1A2E] animate-pulse" />)}
+ </div>
+ ) : <p className="text-[#957DAD] text-[13px] text-center py-8">{q ? "No matching series" : "No web series yet"}</p>
+  ) : <>
+  {visible.map(item => (
+ <div key={item.id} className="admin-content-card bg-[#1A1A2E] border border-white/5 rounded-[14px] p-3.5 mb-3 hover:border-purple-500/30 transition-colors">
+ <div className="flex gap-3.5">
+  <CachedImg src={item.poster || ""} className="admin-content-list-img w-20 h-[115px] rounded-[10px] object-cover flex-shrink-0 bg-[#141422]"
+ loading="eager" decoding="async" fetchPriority="high"
+ onError={e => { (e.target as HTMLImageElement).src = "https://via.placeholder.com/80x115/1A1A2E/9D4EDD?text=N"; }} />
+ <div className="flex-1 min-w-0">
+ <h4 className="text-sm font-semibold mb-1 truncate">{item.title || "Untitled"}</h4>
+ <p className="text-[11px] text-[#D1C4E9] mb-2">{item.year || "N/A"} â€¢ {item.rating || "N/A"}â­ â€¢ {item.language || "N/A"}</p>
+ <div className="flex items-center gap-2 flex-wrap">
+ <p className="text-[11px] text-[#D1C4E9]">{item.seasonCount ?? item.seasons?.length ?? 0} Seasons â€¢ {item.episodeCount ? `${item.episodeCount} Episodes â€¢ ` : ""}{item.category || "Uncategorized"}</p>
+ </div>
+ <div className="flex flex-wrap gap-2 mt-2.5">
+ <button onClick={() => editSeries(item.id)} className={`${btnSecondary} px-3.5 py-2 text-[11px] font-semibold flex items-center gap-1.5`}>
+ <Edit size={12} /> Edit
+ </button>
+ <button onClick={() => deleteSeries(item.id)} className="bg-red-500/20 border border-red-500/30 text-pink-500 px-3.5 py-2 rounded-xl text-[11px] font-semibold flex items-center gap-1.5">
+ <Trash2 size={12} /> Delete
+ </button>
+ </div>
+ </div>
+ </div>
+ </div>
+  ))}
+  {filtered.length > visible.length && (
+   <div className="py-3 flex flex-col items-center gap-1.5">
+    <button
+     onClick={() => setWsListLimit(v => v + ADMIN_LIST_PAGE)}
+     className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-[12px] font-semibold shadow-lg shadow-purple-500/20 transition-all active:scale-95"
+    >
+     Load More ({filtered.length - visible.length} left)
+    </button>
+    <span className="text-[10px] text-[#957DAD]">Showing {visible.length} of {filtered.length}</span>
+   </div>
+  )}
+  </>;
+ })()}
+ </div>
+ )}
+
+ {/* Weekly EP manager removed */}
+
+ {(seriesTab === "ws-add" || seriesTab === "ws-manual") && (
+ <div>
+ {seriesTab === "ws-add" && (
+ <div className={`${glassCard} p-4 mb-4`}>
+ <h3 className="text-sm font-semibold mb-3.5 flex items-center gap-2"><Search size={14} className="text-purple-500" /> Search Web Series</h3>
+ <div className="flex gap-2.5 mb-3.5">
+ <input value={seriesSearch} onChange={e => setSeriesSearch(e.target.value)} onKeyDown={e => e.key === "Enter" && searchTMDBSeries()}
+ className={`${inputClass} flex-1`} placeholder="Search series name..." />
+ <button onClick={searchTMDBSeries} className={`${btnPrimary} px-4 py-3.5`}><Search size={16} /></button>
+ </div>
+ {seriesResults.length > 0 && (
+ <div>
+ <p className="text-xs text-[#D1C4E9] mb-2.5">Click to fetch details:</p>
+ <div className="grid grid-cols-3 gap-3">
+ {seriesResults.map(item => (
+ <div key={item.id} onClick={() => fetchSeriesDetails(item.id)}
+ className="bg-[#1A1A2E] rounded-xl overflow-hidden cursor-pointer border-2 border-transparent hover:border-purple-500 hover:scale-[1.03] transition-all">
+ <CachedImg src={item.poster_path ? TMDB_IMG_BASE + "w342" + item.poster_path : ""} className="w-full aspect-[2/3] object-cover"
+ onError={e => { (e.target as HTMLImageElement).src = "https://via.placeholder.com/200x300/1A1A2E/9D4EDD?text=No+Image"; }} />
+ <div className="p-2.5">
+ <p className="text-[11px] font-semibold leading-tight line-clamp-2">{item.name}</p>
+ <p className="text-[10px] text-purple-500 mt-1 font-semibold">{item.first_air_date?.split("-")[0] || "N/A"}</p>
+ </div>
+ </div>
+ ))}
+ </div>
+ </div>
+ )}
+ </div>
+ )}
+
+ {seriesForm && (
+ <>
+ {seriesForm.backdrop && (
+ <div className="relative rounded-[14px] overflow-hidden mb-5">
+ <CachedImg src={seriesForm.backdrop || seriesForm.poster} className="w-full aspect-video object-cover" loading="lazy" decoding="async" />
+ <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-transparent to-transparent" />
+ <div className="absolute bottom-4 left-4 right-4">
+ <div className="text-lg font-bold">{seriesForm.title}</div>
+ <div className="text-xs text-[#D1C4E9] mt-1">{seriesForm.year} â€¢ {seriesForm.rating} â­</div>
+ </div>
+ </div>
+ )}
+
+ <InlineBackdropAi
+ title={seriesForm.title || ""}
+ year={seriesForm.year}
+ genres={Array.isArray(seriesForm.genres) ? seriesForm.genres : (seriesForm.category ? [seriesForm.category] : undefined)}
+ overview={seriesForm.storyline}
+ contentId={seriesForm.id}
+ contentType="webseries"
+ currentBackdrop={seriesForm.backdrop}
+ currentLogo={seriesForm.logo}
+ onApply={(mode, url) => setSeriesForm((f: any) => ({ ...f, [mode]: url }))}
+ glassCard={glassCard} inputClass={inputClass} btnPrimary={btnPrimary} btnSecondary={btnSecondary}
+ />
+ <div className={`${glassCard} p-4 mb-4`}>
+ <div className="text-base font-semibold mb-4 flex items-center gap-2.5"><span className="text-purple-500">â„¹ï¸</span> Series Details</div>
+ {["title", "logo", "poster", "backdrop", "trailer"].map(field => (
+ <div key={field} className="mb-4">
+ <label className="block text-xs text-[#D1C4E9] mb-2 font-medium capitalize">{field === "logo" ? "Title Logo URL" : field === "trailer" ? "Trailer (YouTube Link)" : field.charAt(0).toUpperCase() + field.slice(1) + " URL"}</label>
+ <div className="flex gap-2">
+ <input value={seriesForm[field] || ""} onChange={e => setSeriesForm({ ...seriesForm, [field]: e.target.value })}
+ className={`${inputClass} flex-1`} placeholder={`${field}...`} />
+ {(field === "poster" || field === "backdrop") && (
+ <label className={`${btnSecondary} !px-3 cursor-pointer flex items-center gap-1`}>
+ <Image size={14} />
+ <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
+ const file = e.target.files?.[0];
+ if (!file) return;
+ try {
+ toast.info("Uploading...");
+ const { uploadToImgbb } = await import("@/lib/imgbbUpload");
+ const url = await uploadToImgbb(file);
+ setSeriesForm(f => ({ ...f, [field]: url }));
+ toast.success(`${field} uploaded!`);
+ } catch { toast.error("Upload failed"); }
+ }} />
+ </label>
+ )}
+ </div>
+ </div>
+ ))}
+ <div className="grid grid-cols-2 gap-3">
+ <div className="mb-4">
+ <label className="block text-xs text-[#D1C4E9] mb-2 font-medium">Year</label>
+ <input value={seriesForm.year || ""} onChange={e => setSeriesForm({ ...seriesForm, year: e.target.value })} className={inputClass} placeholder="Year" />
+ </div>
+ <div className="mb-4">
+ <label className="block text-xs text-[#D1C4E9] mb-2 font-medium">Rating</label>
+ <input value={seriesForm.rating || ""} onChange={e => setSeriesForm({ ...seriesForm, rating: e.target.value })} className={inputClass} placeholder="Rating" />
+ </div>
+ </div>
+ <div className="mb-4">
+ <label className="block text-xs text-[#D1C4E9] mb-2 font-medium flex items-center justify-between">
+ <span>Language</span>
+ <span className="text-[10px] text-cyan-300/80 font-normal">Episode links below show only this language</span>
+ </label>
+ <select
+ value={seriesForm.selectedAdminLanguage || seriesForm.language || "Hindi"}
+ onChange={e => {
+   const v = e.target.value;
+   if (v === "__custom__") {
+     const typed = window.prompt("Type custom language / dubber name (e.g. Atomic Dubber Hindi):", "")?.trim();
+     if (typed) ensureSeriesLanguageTab(typed);
+     return;
+   }
+   ensureSeriesLanguageTab(v);
+ }}
+ className={selectClass}
+ >
+ {Array.from(new Set([
+ ...languageOptions,
+ ...(seriesForm.availableLanguages || []),
+ seriesForm.baseLanguage,
+ seriesForm.language,
+ seriesForm.selectedAdminLanguage,
+ ])).filter(Boolean).map((lang: string) => (
+ <option key={lang} value={lang}>{lang}</option>
+ ))}
+ <option value="__custom__">âœï¸ Custom language (Type your own)â€¦</option>
+ </select>
+ <p className="text-[9px] text-cyan-300/60 mt-1">Custom names (fandub / dubber names) are supported â€” each language keeps its own episode links and shows in the player language button.</p>
+
+ </div>
+  <div className="mb-4">
+ <label className="block text-xs text-[#D1C4E9] mb-2 font-medium">Category</label>
+ {(() => {
+   const known = new Set(categoryList.map(c => c.name));
+   const cur = seriesForm.category || "";
+   const isCustom = !!cur && !known.has(cur);
+   const selVal = isCustom ? "__custom__" : cur;
+   return (
+     <>
+       <select value={selVal} onChange={e => {
+         const v = e.target.value;
+         if (v === "__custom__") {
+           const typed = window.prompt("Type custom category (comma-separated allowed):", isCustom ? cur : "")?.trim();
+           if (typed) setSeriesForm({ ...seriesForm, category: typed });
+         } else {
+           setSeriesForm({ ...seriesForm, category: v });
+         }
+       }} className={selectClass}>
+         <option value="">Select Category</option>
+         {categoryList.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+         <option value="__custom__">âœï¸ Customize (Type your own)â€¦</option>
+       </select>
+       {isCustom && (
+         <input value={cur} onChange={e => setSeriesForm({ ...seriesForm, category: e.target.value })}
+           placeholder="Custom category (e.g. Action, Adventure, Fantasy)"
+           className={inputClass + " mt-2"} />
+       )}
+     </>
+   );
+ })()}
+ </div>
+ <div className="mb-4">
+ <label className="block text-xs text-[#D1C4E9] mb-2 font-medium">Dub Type</label>
+ <div className="flex gap-2">
+ <button type="button" onClick={() => setSeriesForm({ ...seriesForm, dubType: "official" })}
+ className={`flex-1 py-2.5 rounded-lg text-[12px] font-semibold border transition-all ${(seriesForm.dubType || "official") === "official" ? "bg-indigo-600 border-indigo-500 text-white" : "bg-[#141422] border-white/8 text-zinc-400"}`}>
+ {TG_DUB_TAGS.official}
+ </button>
+ <button type="button" onClick={() => setSeriesForm({ ...seriesForm, dubType: "fandub" })}
+ className={`flex-1 py-2.5 rounded-lg text-[12px] font-semibold border transition-all ${seriesForm.dubType === "fandub" ? "bg-orange-600 border-orange-500 text-white" : "bg-[#141422] border-white/8 text-zinc-400"}`}>
+ {TG_DUB_TAGS.fandub}
+ </button>
+ </div>
+ </div>
+ <div className="mb-4">
+ <label className="block text-xs text-[#D1C4E9] mb-2 font-medium">Storyline</label>
+ <textarea value={seriesForm.storyline || ""} onChange={e => setSeriesForm({ ...seriesForm, storyline: e.target.value })}
+ className={`${inputClass} min-h-[100px] resize-y`} placeholder="Storyline" />
+ </div>
+ {/* Weekly EP tracking removed */}
+
+ {/* Per-series Telegram Custom Button moved to Telegram Post section */}
+ {seriesCast.length > 0 && (
+ <div className="mb-4">
+ <label className="block text-xs text-[#D1C4E9] mb-2 font-medium">Cast (Auto-fetched)</label>
+ <div className="flex gap-3 overflow-x-auto pb-2.5 scrollbar-hide">
+ {seriesCast.map((c, i) => (
+ <div key={i} className="flex-shrink-0 w-[70px] text-center">
+ <CachedImg src={c.photo || ""} className="w-[60px] h-[60px] rounded-[10px] object-cover mb-1.5 mx-auto"
+ onError={e => { (e.target as HTMLImageElement).src = "https://via.placeholder.com/60x60/1A1A2E/9D4EDD?text=N"; }} />
+ <p className="text-[10px] font-medium truncate">{c.name}</p>
+ </div>
+ ))}
+ </div>
+ </div>
+ )}
+ </div>
+
+ <div id="seasons-episodes-section" className={`${glassCard} p-4 mb-4 scroll-mt-4`}>
+  <div className="flex justify-between items-center mb-3.5">
+  <div className="text-base font-semibold flex items-center gap-2.5">ğŸ“‹ Seasons & Episodes</div>
+  <div className="flex gap-1.5 items-center">
+  <button onClick={() => setWsJsonImportMode(prev => !prev)}
+  className={`px-3 py-2 rounded-xl text-[11px] font-bold border transition-all flex items-center gap-1.5 ${wsJsonImportMode ? 'bg-blue-500/30 border-blue-500/50 text-blue-300' : 'bg-blue-500/20 border-blue-500/30 text-blue-400 hover:bg-blue-500/40'}`}>
+  <FolderOpen size={12} /> JSON
+  </button>
+  <button onClick={() => setIsComboMode(prev => !prev)}
+  className={`px-3 py-2 rounded-xl text-[11px] font-bold border transition-all flex items-center gap-1.5 ${isComboMode ? 'bg-amber-500/30 border-amber-500/50 text-amber-300' : 'bg-amber-500/20 border-amber-500/30 text-amber-400 hover:bg-amber-500/40'}`}>
+  <Layers size={12} /> Merge
+  </button>
+  <button onClick={() => addSeason()} className={`${btnSecondary} px-3 py-2 text-[11px]`}><Plus size={12} className="mr-1" /> Season</button>
+  </div>
+  </div>
+
+  {/* Combination Modal/Panel */}
+  {isComboMode && (
+    <div className="bg-gradient-to-br from-amber-900/30 to-orange-900/20 rounded-2xl border border-amber-500/20 p-4 mb-4 space-y-3 shadow-lg shadow-amber-500/5">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-[12px] font-bold text-amber-200 uppercase tracking-wide">Season Combination</p>
+          <p className="text-[9px] text-amber-400/70">Select seasons to merge into a single sequence</p>
+        </div>
+        <button onClick={() => {
+          if (comboSelection.length < 2) { toast.error("Select at least 2 seasons to merge"); return; }
+          
+          // Logic to merge seasons
+          const sortedIndices = [...comboSelection].sort((a, b) => a - b);
+          const baseIdx = sortedIndices[0];
+          const newSeasons = [...seasonsData];
+          const baseSeason = { ...newSeasons[baseIdx], episodes: [...(newSeasons[baseIdx].episodes || [])] };
+          
+          // Re-indexing starting point
+          let currentEpCount = baseSeason.episodes.length;
+          
+          for (let i = 1; i < sortedIndices.length; i++) {
+            const idx = sortedIndices[i];
+            const seasonToMerge = newSeasons[idx];
+            const episodesToMerge = (seasonToMerge.episodes || []).map(ep => ({
+              ...ep,
+              episodeNumber: currentEpCount + Number(ep.episodeNumber || 1)
+            }));
+            baseSeason.episodes = [...baseSeason.episodes, ...episodesToMerge];
+            currentEpCount += episodesToMerge.length;
+          }
+          
+          // Remove merged seasons (starting from highest index to avoid shift)
+          const finalSeasons = newSeasons.filter((_, idx) => !sortedIndices.slice(1).includes(idx));
+          finalSeasons[baseIdx] = baseSeason;
+          
+          setSeasonsData(finalSeasons);
+          setComboSelection([]);
+          setIsComboMode(false);
+          toast.success("Seasons merged professionally!");
+        }} className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-[10px] font-black shadow-lg shadow-amber-600/20 transition-all flex items-center gap-1.5 uppercase">
+          <Layers size={12} /> Combine Now
+        </button>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {seasonsData.map((s, idx) => (
+          <button 
+            key={idx} 
+            onClick={() => setComboSelection(prev => prev.includes(idx) ? prev.filter(i => i !== idx) : [...prev, idx])}
+            className={`px-3 py-2 rounded-xl text-[10px] font-bold border transition-all ${comboSelection.includes(idx) ? 'bg-amber-500 border-amber-400 text-white shadow-md shadow-amber-500/30' : 'bg-black/30 border-white/10 text-zinc-400'}`}
+          >
+            {s.name || `Season ${idx + 1}`} ({s.episodes?.length || 0} EP)
+          </button>
+        ))}
+      </div>
+    </div>
+  )}
+
+  {/* JSON Import Section - Beautiful Panel */}
+  {wsJsonImportMode && (
+  <div className="bg-gradient-to-br from-blue-900/30 to-indigo-900/20 rounded-2xl border border-blue-500/20 p-4 mb-4 space-y-3">
+...
+  <p className="text-[9px] text-blue-400/50 text-center">
+  Format: <code className="bg-black/30 px-1.5 py-0.5 rounded text-blue-300/70">episodes: [...]</code> or <code className="bg-black/30 px-1.5 py-0.5 rounded text-blue-300/70">seasons: [...]</code>
+  </p>
+  </div>
+  )}
+  {/* Hidden file input for per-season JSON import */}
+  <input type="file" ref={wsSeasonJsonFileRef} accept=".json,application/json" multiple onChange={wsHandleSeasonJsonFile} className="hidden" />
+  
+      {(Array.isArray(seasonsData) ? seasonsData : []).map((rawSeason, sIdx) => {
+        return <SortableSeasonItem 
+          key={`season-${sIdx}`}
+          id={`season-${sIdx}`}
+          sIdx={sIdx}
+          rawSeason={rawSeason}
+          seasonsData={seasonsData}
+          comboSelection={comboSelection}
+          setComboSelection={setComboSelection}
+          isComboMode={isComboMode}
+
+          updateSeasonName={updateSeasonName}
+          removeSeason={removeSeason}
+          wsSeasonJsonFileRef={wsSeasonJsonFileRef}
+          setWsSeasonJsonTarget={setWsSeasonJsonTarget}
+          setWsSeasonPasteTarget={setWsSeasonPasteTarget}
+          setWsSeasonPasteText={setWsSeasonPasteText}
+          setExpandedSeasons={setExpandedSeasons}
+          expandedSeasons={expandedSeasons}
+          wsSeasonPasteTarget={wsSeasonPasteTarget}
+          wsSeasonPasteText={wsSeasonPasteText}
+          wsImportJsonToSeason={wsImportJsonToSeason}
+          addEpisode={addEpisode}
+          episodeRenderLimits={episodeRenderLimits}
+          setEpisodeRenderLimits={setEpisodeRenderLimits}
+          seriesForm={seriesForm}
+          normalizeLanguageValue={normalizeLanguageValue}
+          updateSeriesEpisodeLanguageLink={updateSeriesEpisodeLanguageLink}
+          removeEpisode={removeEpisode}
+          addSeriesEpisodeAudioTrack={addSeriesEpisodeAudioTrack}
+          updateSeriesEpisodeAudioTrack={updateSeriesEpisodeAudioTrack}
+          setSeriesEpisodeDefaultAudioTrack={setSeriesEpisodeDefaultAudioTrack}
+          removeSeriesEpisodeAudioTrack={removeSeriesEpisodeAudioTrack}
+          inputClass={inputClass}
+          btnSecondary={btnSecondary}
+          moveSeason={(from: number, to: number) => {
+            if (to < 0 || to >= seasonsData.length || from === to) return;
+            setSeasonsData((items) => {
+              const next = [...items];
+              const moved = next.splice(from, 1)[0];
+              if (!moved) return items;
+              next.splice(to, 0, moved);
+              return next.map((season, index) => ({ ...season, seasonNumber: index + 1 }));
+            });
+            setExpandedSeasons((prev) => {
+              const next = { ...prev };
+              const fromValue = !!prev[from];
+              next[from] = !!prev[to];
+              next[to] = fromValue;
+              return next;
+            });
+          }}
+        />;
+      })}
+ </div>
+ 
+ {/* Inline URL Changer for current series */}
+ {seasonsData.length > 0 && (() => {
+
+ const InlineUrlChanger = () => {
+ const [inlineOldDomain, setInlineOldDomain] = useState("");
+ const [inlineNewDomain, setInlineNewDomain] = useState("");
+ const [inlineResult, setInlineResult] = useState<{ total: number; replaced: number } | null>(null);
+ const [inlineQP, setInlineQP] = useState("");
+ const [showInlineQP, setShowInlineQP] = useState(false);
+
+ const handleInlineQP = () => {
+ const t = inlineQP.trim();
+ if (!t) { toast.error("link Paste!"); return; }
+ try {
+ const u = new URL(t.split('\n')[0].trim());
+ setInlineOldDomain(`${u.protocol}//${u.host}`);
+ toast.success(`âœ… domain set: ${u.protocol}//${u.host}`);
+ setShowInlineQP(false); setInlineQP("");
+ } catch { toast.error("valid URL Paste!"); }
+ };
+
+ const replaceInSeasonsData = () => {
+ if (!inlineOldDomain.trim() || !inlineNewDomain.trim()) { toast.error("à¦¦à§à¦Ÿà§‹ domainthis à¦¦à¦¿à¦¤à§‡ will be!"); return; }
+ const old = inlineOldDomain.trim();
+ const nw = inlineNewDomain.trim();
+ let totalLinks = 0, replacedLinks = 0;
+
+  const updatedSeasons = (Array.isArray(seasonsData) ? seasonsData : []).map(season => ({
+ ...season,
+  episodes: (Array.isArray((season as any).episodes) ? (season as any).episodes : []).map(ep => {
+ const updatedEp = { ...ep } as any;
+ ["link", "link480", "link720", "link1080", "link4k"].forEach(field => {
+ if (updatedEp[field]) { totalLinks++; if (updatedEp[field].includes(old)) { updatedEp[field] = updatedEp[field].replace(old, nw); replacedLinks++; } }
+ });
+  if (updatedEp.audioTracks) {
+  updatedEp.audioTracks = normalizeAudioTrackList(updatedEp.audioTracks).map((at: any) => {
+ const u = { ...at };
+ ["link", "link480", "link720", "link1080", "link4k"].forEach(f => { if (u[f]) { totalLinks++; if (u[f].includes(old)) { u[f] = u[f].replace(old, nw); replacedLinks++; } } });
+ return u;
+ });
+ }
+ return updatedEp;
+ }),
+ }));
+
+ setSeasonsData(updatedSeasons);
+ setInlineResult({ total: totalLinks, replaced: replacedLinks });
+ toast.success(`âœ… ${replacedLinks}/${totalLinks} link replaced! (save to do don't forget)`);
+ };
+
+ return (
+ <div className={`${glassCard} p-4 mb-4`}>
+ <h4 className="text-xs font-bold text-white mb-2 flex items-center gap-2"><Link size={12} className="text-cyan-400" /> ğŸ”— URL Replace</h4>
+ <p className="text-[9px] text-zinc-400 mb-3">Replace domains in every link for this series. Saving writes the changes to the database.</p>
+ 
+ {/* Quick Paste */}
+ <button onClick={() => setShowInlineQP(!showInlineQP)}
+ className="mb-2 text-[10px] text-cyan-400 hover:text-cyan-300 flex items-center gap-1">
+ <Download size={10} /> Quick Paste (extract domain from links)
+ </button>
+ {showInlineQP && (
+ <div className="mb-3 bg-black/20 rounded-xl border border-cyan-500/20 p-2.5">
+ <textarea value={inlineQP} onChange={e => setInlineQP(e.target.value)}
+ placeholder="any video link Paste â€” domain auto set will be"
+ className={`${inputClass} w-full min-h-[50px] resize-none text-[10px] font-mono mb-2`} />
+ <button onClick={handleInlineQP} disabled={!inlineQP.trim()}
+ className={`${btnPrimary} w-full py-1.5 text-[10px] flex items-center justify-center gap-1 disabled:opacity-30`}>
+ <Check size={11} /> domain set 
+ </button>
+ </div>
+ )}
+
+ <div className="grid grid-cols-1 gap-2 mb-3">
+ <input value={inlineOldDomain} onChange={e => setInlineOldDomain(e.target.value)} placeholder="old: http://fi3.bot-hosting.net:22854" className={`${inputClass} !text-[10px]`} />
+ <input value={inlineNewDomain} onChange={e => setInlineNewDomain(e.target.value)} placeholder="new: https://rahat1102-video-hosting-bot.hf.space" className={`${inputClass} !text-[10px]`} />
+ </div>
+ <button onClick={replaceInSeasonsData} className={`${btnPrimary} w-full py-2 text-[11px] flex items-center justify-center gap-1.5`}>
+ <RefreshCw size={12} /> replace 
+ </button>
+ {inlineResult && <p className="text-[10px] text-green-400 mt-2">âœ… {inlineResult.replaced}/{inlineResult.total} replaced</p>}
+ 
+ {/* Quick Presets */}
+ <div className="mt-3 pt-3 border-t border-zinc-700/30">
+ <p className="text-[9px] text-zinc-500 mb-2">âš¡ Quick Presets</p>
+ <div className="grid grid-cols-2 gap-1.5">
+ <button onClick={() => { setInlineOldDomain("http://fi3.bot-hosting.net:22854"); setInlineNewDomain("https://rahat1102-video-hosting-bot.hf.space"); }}
+ className="text-left p-2 rounded-lg bg-zinc-800/40 border border-zinc-700/40 hover:border-cyan-500/30 transition-all">
+ <p className="text-[9px] font-semibold text-white">Bot â†’ HF</p>
+ <p className="text-[8px] text-zinc-500">fi3.bot â†’ hf.space</p>
+ </button>
+ <button onClick={() => { setInlineOldDomain("https://rahat1102-video-hosting-bot.hf.space"); setInlineNewDomain("http://fi3.bot-hosting.net:22854"); }}
+ className="text-left p-2 rounded-lg bg-zinc-800/40 border border-zinc-700/40 hover:border-cyan-500/30 transition-all">
+ <p className="text-[9px] font-semibold text-white">HF â†’ Bot</p>
+ <p className="text-[8px] text-zinc-500">hf.space â†’ fi3.bot</p>
+ </button>
+ </div>
+ </div>
+ </div>
+ );
+ };
+ return <InlineUrlChanger />;
+ })()}
+
+ {/* Export JSON for current series */}
+ {seasonsData.length > 0 && (
+ <div className={`${glassCard} p-4 mb-4`}>
+ <h4 className="text-xs font-bold text-white mb-2 flex items-center gap-2"><Download size={12} className="text-green-400" /> ğŸ“¦ Export JSON</h4>
+ <p className="text-[9px] text-zinc-400 mb-3">this series all Season and episode JSON download à¥¤</p>
+ <button onClick={() => {
+ const exportData = {
+ title: seriesForm?.title || "Unknown",
+  seasons: (Array.isArray(seasonsData) ? seasonsData : []).map(s => ({
+ name: s.name,
+ seasonNumber: s.seasonNumber,
+  episodes: (Array.isArray((s as any).episodes) ? (s as any).episodes : []).map(ep => {
+ const epData: any = {
+ episodeNumber: ep.episodeNumber,
+ title: ep.title,
+ link: ep.link,
+ };
+ if (ep.link480) epData.link480 = ep.link480;
+ if (ep.link720) epData.link720 = ep.link720;
+ if (ep.link1080) epData.link1080 = ep.link1080;
+ if (ep.link4k) epData.link4k = ep.link4k;
+ if ((ep as any).qualityLinks) epData.qualityLinks = (ep as any).qualityLinks;
+ if ((ep as any).audioTracks?.length) epData.audioTracks = (ep as any).audioTracks;
+ if ((ep as any).defaultAudio) epData.defaultAudio = (ep as any).defaultAudio;
+ return epData;
+ }),
+ })),
+ };
+ const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: "application/json" });
+ const url = URL.createObjectURL(blob);
+ const a = document.createElement("a");
+ a.href = url;
+ a.download = `${(seriesForm?.title || "series").replace(/[^a-zA-Z0-9]/g, "_")}_export.json`;
+ a.click();
+ URL.revokeObjectURL(url);
+ toast.success("âœ… JSON download done!");
+ }} className={`${btnPrimary} w-full py-2.5 text-[11px] flex items-center justify-center gap-1.5 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500`}>
+ <Download size={12} /> Export JSON
+ </button>
+ </div>
+ )}
+
+ {/* Inline Link Checker for current series */}
+ <WsInlineLinkChecker
+ seasonsData={seasonsData}
+ seriesTitle={seriesForm?.title || ""}
+ glassCard={glassCard}
+ btnPrimary={btnPrimary}
+ />
+
+ <div className="flex gap-2">
+ <button onClick={saveSeries} className={`${btnPrimary} flex-1 py-4 text-[14px] font-semibold flex items-center justify-center gap-2`}>
+ <Save size={16} /> Normal Save
+ </button>
+ <button onClick={() => {
+ // Capture context BEFORE saveSeries resets it
+ const capturedForm = seriesForm ? { ...seriesForm } : null;
+ const capturedSeasons = seasonsData.map(s => ({ ...s, episodes: [...(s.episodes || [])] }));
+ wsNotifyContextRef.current = {
+ seriesId: seriesEditId || "__pending__",
+ form: capturedForm,
+ seasons: capturedSeasons,
+ };
+
+ // ===== AUTO-DETECT new episode ranges per season =====
+ const baseline = wsBaselineRef.current || {};
+ const detected: Array<{ seasonIdx: number; seasonName: string; startEp: number; endEp: number }> = [];
+ capturedSeasons.forEach((s: any, sIdx: number) => {
+ const baseSet = baseline[sIdx] || new Set<number>();
+ const currentNums = (s.episodes || [])
+ .map((e: any) => Number(e.episodeNumber || 0))
+ .filter((n: number) => n > 0)
+ .sort((a: number, b: number) => a - b);
+ const newNums = currentNums.filter((n: number) => !baseSet.has(n));
+ if (newNums.length === 0) return;
+ // Group contiguous ranges
+ let rangeStart = newNums[0];
+ let prev = newNums[0];
+ for (let i = 1; i < newNums.length; i++) {
+ const cur = newNums[i];
+ if (cur === prev + 1) { prev = cur; continue; }
+ detected.push({ seasonIdx: sIdx, seasonName: s.name || `Season ${sIdx + 1}`, startEp: rangeStart, endEp: prev });
+ rangeStart = cur; prev = cur;
+ }
+ detected.push({ seasonIdx: sIdx, seasonName: s.name || `Season ${sIdx + 1}`, startEp: rangeStart, endEp: prev });
+ });
+ setWsAutoRanges(detected);
+
+ // Pre-fill the largest detected range for the modal
+ if (detected.length > 0) {
+ const biggest = [...detected].sort((a, b) => (b.endEp - b.startEp) - (a.endEp - a.startEp))[0];
+ setWsNotifySeason(String(biggest.seasonIdx));
+ // Episode dropdown is indexed by array position â€” find ep with that number
+ const epList = capturedSeasons[biggest.seasonIdx]?.episodes || [];
+ const startIdx = epList.findIndex((e: any) => Number(e.episodeNumber) === biggest.startEp);
+ const endIdx = epList.findIndex((e: any) => Number(e.episodeNumber) === biggest.endEp);
+ if (startIdx >= 0) setWsNotifyEpisode(String(startIdx));
+ if (endIdx >= 0) setWsNotifyEpisodeEnd(String(endIdx));
+ }
+
+  saveSeries().then((savedId) => {
+  if (!savedId) return;
+  // After save, update seriesId from saved result for new series
+ if (wsNotifyContextRef.current && (wsNotifyContextRef.current.seriesId === "__pending__" || !wsNotifyContextRef.current.seriesId)) {
+  wsNotifyContextRef.current.seriesId = savedId || lastSavedSeriesIdRef.current || "";
+ }
+ setWsSaveNotifyModal(true);
+  });
+ }} className="flex-1 py-4 text-[14px] font-semibold flex items-center justify-center gap-2 bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-500 hover:to-purple-500 text-white rounded-lg transition-colors cursor-pointer border-none">
+ <Bell size={16} /> Save + Notify
+ </button>
+ </div>
+ </>
+ )}
+ </div>
+ )}
+ </div>
+ )}
+
+ {/* Save + Notify Modal */}
+ {wsSaveNotifyModal && (() => {
+ const ctx = wsNotifyContextRef.current;
+ const ctxSeasons = ctx?.seasons || [];
+ const ctxForm = ctx?.form;
+ const ctxSeriesId = ctx?.seriesId || "";
+ return (
+  <div className="admin-isolated-overlay fixed inset-0 z-[500] bg-black/80 flex items-center justify-center p-4" onClick={() => setWsSaveNotifyModal(false)}>
+  <div className="admin-optimized-panel admin-scroll-smooth bg-[#16162A] border border-white/10 rounded-2xl w-full max-w-[440px] max-h-[80vh] overflow-y-auto p-5" onClick={e => e.stopPropagation()}>
+ {wsNotifyStep === "release" ? (
+ <div>
+ <h3 className="text-sm font-bold mb-3 flex items-center gap-2"><Zap size={14} className="text-pink-500" /> Create New Release</h3>
+ <p className="text-[11px] text-zinc-400 mb-3">{ctxForm?.title ? `"${ctxForm.title}" â€” Season and episode Select` : "Season and episode select à¦•à¦°à§‡ New Release Post"}</p>
+
+ {/* Auto-detected ranges hint (filled by Save+Notify diff) */}
+ {wsAutoRanges.length > 0 && (
+ <div className="mb-3 p-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 space-y-1">
+ <p className="text-[10px] font-bold text-emerald-300 uppercase tracking-wider">âš¡ Auto-detected new episodes</p>
+ {wsAutoRanges.map((r, i) => (
+ <p key={i} className="text-[11px] text-emerald-100">
+ â€¢ <b>{r.seasonName}</b> â€” EP {r.startEp}{r.endEp !== r.startEp ? `â€“${r.endEp}` : ''}
+ </p>
+ ))}
+ {wsAutoRanges.length > 1 && (
+ <p className="text-[10px] text-emerald-200/80 pt-1">Each range will be sent as a separate notification.</p>
+ )}
+ </div>
+ )}
+
+ <div className="grid grid-cols-3 gap-2 mb-4">
+ <div>
+ <label className="block text-xs text-zinc-400 mb-1.5">Season</label>
+ <select value={wsNotifySeason} onChange={e => { setWsNotifySeason(e.target.value); setWsNotifyEpisode(""); setWsNotifyEpisodeEnd(""); }} className={selectClass}>
+ <option value="">Select</option>
+ {ctxSeasons.map((s: any, i: number) => <option key={i} value={String(i)}>{s.name || `Season ${i + 1}`}</option>)}
+ </select>
+ </div>
+ <div>
+ <label className="block text-xs text-zinc-400 mb-1.5">EP Start</label>
+ <select value={wsNotifyEpisode} onChange={e => setWsNotifyEpisode(e.target.value)} className={selectClass}>
+ <option value="">Select</option>
+ {wsNotifySeason !== "" && ctxSeasons[parseInt(wsNotifySeason)]?.episodes?.map((ep: any, i: number) => (
+ <option key={i} value={String(i)}>EP {ep.episodeNumber || i + 1}</option>
+ ))}
+ </select>
+ </div>
+ <div>
+ <label className="block text-xs text-zinc-400 mb-1.5">EP End</label>
+ <select value={wsNotifyEpisodeEnd} onChange={e => setWsNotifyEpisodeEnd(e.target.value)} className={selectClass}>
+ <option value="">Same</option>
+ {wsNotifySeason !== "" && ctxSeasons[parseInt(wsNotifySeason)]?.episodes?.map((ep: any, i: number) => (
+ <option key={i} value={String(i)}>EP {ep.episodeNumber || i + 1}</option>
+ ))}
+ </select>
+ </div>
+ </div>
+ <button onClick={async () => {
+ if (wsNotifySeason === "" || wsNotifyEpisode === "") { toast.error("Season and episode Select"); return; }
+ if (!ctxSeriesId || !ctxForm?.title) { toast.error("series context à¦ªà¦¾ à¦¯à¦¾à¦¯à¦¼à¦¨à¦¿"); return; }
+ const season = ctxSeasons[parseInt(wsNotifySeason)];
+ const episode = season?.episodes?.[parseInt(wsNotifyEpisode)];
+ const episodeEnd = wsNotifyEpisodeEnd !== "" ? season?.episodes?.[parseInt(wsNotifyEpisodeEnd)] : null;
+
+ // Build the list of ranges to publish.
+ // - If wsAutoRanges has multiple entries â†’ publish each as separate notification (multi-targeting).
+ // - Otherwise just one range from selectors.
+ const usingMulti = wsAutoRanges.length > 1;
+ const rangesToPublish = usingMulti
+ ? wsAutoRanges.map(r => ({
+ seasonIdxNum: r.seasonIdx + 1,
+ seasonName: r.seasonName,
+ startEp: r.startEp,
+ endEp: r.endEp,
+ }))
+ : [{
+ seasonIdxNum: parseInt(wsNotifySeason) + 1,
+ seasonName: season?.name || `Season ${parseInt(wsNotifySeason) + 1}`,
+ startEp: episode?.episodeNumber || parseInt(wsNotifyEpisode) + 1,
+ endEp: episodeEnd?.episodeNumber || episode?.episodeNumber || parseInt(wsNotifyEpisode) + 1,
+ }];
+
+ try {
+ for (const r of rangesToPublish) {
+  setAdminBusyTask("Adding new releaseâ€¦");
+  await yieldAdminFrame();
+ const newRelease: any = {
+ contentId: ctxSeriesId,
+ contentType: "webseries",
+ title: ctxForm.title,
+ poster: ctxForm.poster || "",
+ year: ctxForm.year || "N/A",
+ rating: ctxForm.rating || "N/A",
+ visibility: ctxForm.visibility || "public",
+ episodeInfo: {
+ seasonNumber: r.seasonIdxNum,
+ episodeNumber: r.startEp,
+ episodeNumberEnd: r.endEp,
+ seasonName: r.seasonName,
+ },
+ timestamp: Date.now(),
+ active: true,
+ weeklyEnabled: ctxForm.weeklyEnabled === true,
+ weeklyEveryDays: Math.max(1, Number(ctxForm.weeklyEveryDays) || 7),
+ };
+ await set(push(ref(db, "newEpisodeReleases")), newRelease);
+ }
+  setAdminBusyTask(null);
+ toast.success(rangesToPublish.length > 1
+ ? `âœ… ${rangesToPublish.length} new release entries added (multi-range)!`
+ : "âœ… New Release added!");
+ // Clear so a future Save+Notify on the same form starts fresh
+  startTransition(() => setWsAutoRanges([]));
+  // Browser push removed.
+  startTransition(() => setTgTitle(ctxForm.title));
+ const backdropUrl = ctxForm.backdrop || ctxForm.poster || "";
+  startTransition(() => setTgPosterUrl(backdropUrl.replace('/original/', '/w1280/').replace('/w780/', '/w1280/')));
+ const wsStartEp = String(episode?.episodeNumber || parseInt(wsNotifyEpisode) + 1).padStart(2, '0');
+ const wsEndEp = String(episodeEnd?.episodeNumber || episode?.episodeNumber || parseInt(wsNotifyEpisode) + 1).padStart(2, '0');
+  startTransition(() => {
+  setTgSeason(String(parseInt(wsNotifySeason) + 1).padStart(2, '0'));
+  setTgNewEpAdded(wsEndEp !== wsStartEp ? `${wsStartEp}-${wsEndEp}` : wsStartEp);
+  });
+  await yieldAdminFrame();
+ // Get per-season total episodes from TMDB
+ const seasonNum = parseInt(wsNotifySeason) + 1;
+ try {
+ const tmdbId = ctxForm.tmdbId;
+ if (tmdbId) {
+ const tmdbRes = await fetch(`${TMDB_BASE_URL}/tv/${tmdbId}/season/${seasonNum}?api_key=${TMDB_API_KEY}&language=en-US`);
+ const tmdbData = await tmdbRes.json();
+ if (tmdbData?.episodes?.length) {
+ setTgTotalEpisodes(String(tmdbData.episodes.length));
+ } else {
+ setTgTotalEpisodes(String(season?.episodes?.length || 0));
+ }
+ } else {
+ setTgTotalEpisodes(String(season?.episodes?.length || 0));
+ }
+ } catch {
+ setTgTotalEpisodes(String(season?.episodes?.length || 0));
+ }
+  startTransition(() => {
+  setTgDubType(ctxForm.dubType === "fandub" ? "fandub" : "official");
+  if (ctxForm.language) setTgLanguages(String(ctxForm.language).replace(/\s*\/\s*/g, ", ").replace(/\s*\|\s*/g, ", "));
+   if (ctxForm.rating) setTgRating(String(ctxForm.rating));
+   });
+  // Genres ALWAYS from TMDB (id preferred, else search by title).
+  try {
+  if (ctxForm.tmdbId) setTgImdbId(String(ctxForm.tmdbId));
+  const { genres, rating } = await resolveTelegramGenresAndRating(String(ctxForm.tmdbId || ""), ctxForm.title || "", ctxForm.category || "");
+  if (genres.length > 0) setTgGenres(genres.join(", "));
+  if (rating) setTgRating(rating);
+  } catch {}
+ // Get quality info
+ const quals: string[] = [];
+  let scannedEpisodes = 0;
+  ctxSeasons.some((s: any) => (s.episodes || []).some((ep: any) => {
+  scannedEpisodes += 1;
+ if (ep.link480) quals.push("480p");
+ if (ep.link720) quals.push("720p");
+ if (ep.link1080) quals.push("1080p");
+ if (ep.link4k) quals.push("4K");
+  return scannedEpisodes > 250 || new Set(quals).size >= 4;
+  }));
+  startTransition(() => {
+  if (quals.length > 0) setTgQuality([...new Set(quals)].join(","));
+  setTgButtonLink(buildEpisodeShareUrl(ctxSeriesId, parseInt(wsNotifySeason), getEpisodeIndexForShare(season, episode?.episodeNumber, parseInt(wsNotifyEpisode))));
+  setTgSelectedAnimeId(String(ctxSeriesId));
+  });
+ // Load any saved per-anime custom buttons
+ try {
+ const safeId = String(ctxSeriesId).replace(/[^a-zA-Z0-9_-]/g, "_");
+ const savedSnap = await get(ref(db, `telegramPerAnimeButtons/${safeId}`));
+ const saved = savedSnap.val();
+ if (saved && typeof saved === "object") {
+ if (typeof saved.defaultButtonName === "string" && saved.defaultButtonName.trim()) setTgDefaultButtonName(normalizeTelegramButtonText(saved.defaultButtonName));
+ if (Array.isArray(saved.buttons)) setTgButtons(saved.buttons.map((b: any) => ({ name: normalizeTelegramButtonText(String(b?.name || "")), url: String(b?.url || "") })));
+ else setTgButtons([]);
+ } else { setTgButtons([]); }
+ } catch {}
+  startTransition(() => setWsNotifyStep("telegram"));
+  } catch (err: any) { toast.error("Error: " + err.message); }
+  finally { setAdminBusyTask(null); }
+ }} className="w-full py-3 rounded-lg text-sm font-bold bg-gradient-to-r from-pink-600 to-purple-600 text-white flex items-center justify-center gap-2">
+ <Zap size={14} /> Release + Notify
+ </button>
+ </div>
+ ) : (
+ <div>
+ <h3 className="text-sm font-bold mb-3 flex items-center gap-2"><Send size={14} className="text-blue-400" /> Telegramà§‡ Post</h3>
+ <div className="space-y-3">
+ <div>
+ <label className="block text-xs text-zinc-400 mb-1.5">Channel ID</label>
+ <textarea value={tgChannelId} onChange={e => setTgChannelId(e.target.value)} className={`${inputClass} min-h-[50px] resize-y`} placeholder="@channel" rows={2} />
+ </div>
+ <div>
+ <label className="block text-xs text-zinc-400 mb-1.5">Title</label>
+ <input value={tgTitle} onChange={e => setTgTitle(e.target.value)} className={inputClass} placeholder="Title" />
+ </div>
+ <div className="grid grid-cols-2 gap-3">
+ <div>
+ <label className="block text-xs text-zinc-400 mb-1.5">Season</label>
+ <input value={tgSeason} onChange={e => setTgSeason(e.target.value)} className={inputClass} placeholder="01" />
+ </div>
+ <div>
+ <label className="block text-xs text-zinc-400 mb-1.5">New EP</label>
+ <input value={tgNewEpAdded} onChange={e => setTgNewEpAdded(e.target.value)} className={inputClass} placeholder="02" />
+ </div>
+ </div>
+ <div>
+ <label className="block text-xs text-zinc-400 mb-1.5">Poster URL</label>
+ <input value={tgPosterUrl} onChange={e => setTgPosterUrl(e.target.value)} className={inputClass} placeholder="https://..." />
+ </div>
+ <div className="flex gap-2">
+ <button onClick={() => { setWsSaveNotifyModal(false); setWsNotifyStep("release"); setWsNotifySeason(""); setWsNotifyEpisode(""); setWsNotifyEpisodeEnd(""); setWsAutoRanges([]); wsNotifyContextRef.current = null; }} className="flex-1 py-3 rounded-lg text-sm font-bold bg-zinc-700 text-white flex items-center justify-center gap-2">
+ <X size={14} /> Cancel
+ </button>
+ <button onClick={async () => {
+ // Step 1: Send the in-app notification first (existing flow already added the release entry)
+ // Step 2: Auto-redirect to Telegram Post section with anime preselected
+ const ctx = wsNotifyContextRef.current;
+ const seriesId = ctx?.seriesId || "";
+ // ğŸ¯ Capture season/episode BEFORE state is cleared so we can build the
+ // exact deep link (/watch/<id>?s=<season>&e=<episode>) even when the
+ // releasesData snapshot from Firebase hasn't propagated yet.
+ const usingMulti = wsAutoRanges.length > 0;
+ const firstAuto = wsAutoRanges[0];
+ const capturedSeasonIdx = usingMulti
+   ? (firstAuto?.seasonIdx ?? 0)
+   : parseInt(wsNotifySeason);
+ const capturedEpNumber = usingMulti
+   ? (firstAuto?.startEp ?? 1)
+   : (parseInt(wsNotifyEpisode) + 1);
+ const capturedSeason = ctx?.seasons?.[capturedSeasonIdx];
+ const capturedEpNumberEnd = usingMulti
+   ? (firstAuto?.endEp ?? firstAuto?.startEp ?? capturedEpNumber)
+   : (wsNotifyEpisodeEnd !== ""
+      ? (capturedSeason?.episodes?.[parseInt(wsNotifyEpisodeEnd)]?.episodeNumber ?? parseInt(wsNotifyEpisodeEnd) + 1)
+      : capturedEpNumber);
+ const capturedEpIdx = getEpisodeIndexForShare(capturedSeason, capturedEpNumber, Math.max(0, capturedEpNumber - 1));
+
+ toast.success("âœ… Notification sent â€” redirecting to Telegram post...");
+ setWsSaveNotifyModal(false);
+ setWsNotifyStep("release");
+ setWsNotifySeason("");
+ setWsNotifyEpisode("");
+ setWsNotifyEpisodeEnd("");
+ setWsAutoRanges([]);
+ wsNotifyContextRef.current = null;
+ // Switch section then preselect â€” find the matching release (most recent for this seriesId)
+ setActiveSection("telegram-post");
+ setTimeout(async () => {
+ const matching = releasesData
+   .filter(r => r.contentId === seriesId)
+   .sort((a: any, b: any) => (b.timestamp || 0) - (a.timestamp || 0))[0];
+ setTgContentKind("series");
+ if (matching) {
+ await fillTelegramFromRelease(matching.id);
+ // Force-override with the captured deep link so it always points at the
+ // freshly-added episode (releasesData may hold an older episodeInfo).
+ if (Number.isFinite(capturedSeasonIdx) && capturedSeasonIdx >= 0) {
+   setTgButtonLink(buildEpisodeShareUrl(seriesId, capturedSeasonIdx, capturedEpIdx));
+ }
+ // âœ… Range fix â€” always restore the exact captured episode range.
+ setTgContentKind("series");
+ setTgSeason(String(capturedSeasonIdx + 1).padStart(2, "0"));
+ {
+   const s = String(capturedEpNumber).padStart(2, "0");
+   const e = String(capturedEpNumberEnd).padStart(2, "0");
+   setTgNewEpAdded(e !== s ? `${s}-${e}` : s);
+  }
+ } else if (seriesId) {
+
+ // Fallback: fill directly from webseries data
+ const ws = webseriesData.find(s => s.id === seriesId);
+ if (ws) {
+ setTgSelectedRelease(seriesId);
+ setTgTitle(ws.title || "");
+ const backdrop = ws.backdrop || ws.poster || "";
+ setTgPosterUrl(backdrop.replace('/original/', '/w1280/').replace('/w780/', '/w1280/'));
+ if (ws.rating) setTgRating(String(ws.rating));
+  // Genres from TMDB only â€” never from local category.
+  (async () => { try {
+    const { genres, rating } = await resolveTelegramGenresAndRating(String((ws as any).tmdbId || ""), ws.title || "", (ws as any).category || "");
+    if (genres.length > 0) setTgGenres(genres.join(", "));
+    if (rating) setTgRating(rating);
+  } catch {} })();
+ if (ws.language) setTgLanguages(String(ws.language).replace(/\s*\/\s*/g, ", ").replace(/\s*\|\s*/g, ", "));
+ setTgDubType(ws.dubType === "fandub" ? "fandub" : "official");
+  // Use the captured season/episode from the modal so the Watch button
+  // always deep-links to the newly-added episode (not just seriesId).
+  if (Number.isFinite(capturedSeasonIdx) && capturedSeasonIdx >= 0) {
+   setTgButtonLink(buildEpisodeShareUrl(seriesId, capturedSeasonIdx, capturedEpIdx));
+   setTgSeason(String(capturedSeasonIdx + 1).padStart(2, '0'));
+    const rangeStart = String(capturedEpNumber).padStart(2, "0");
+    const rangeEnd = String(capturedEpNumberEnd).padStart(2, "0");
+    setTgNewEpAdded(rangeEnd !== rangeStart ? `${rangeStart}-${rangeEnd}` : rangeStart);
+  } else {
+   setTgButtonLink(buildEpisodeShareUrl(seriesId));
+  }
+ setTgSelectedAnimeId(String(seriesId));
+ (async () => {
+ try {
+ const safeId = String(seriesId).replace(/[^a-zA-Z0-9_-]/g, "_");
+ const savedSnap = await get(ref(db, `telegramPerAnimeButtons/${safeId}`));
+ const saved = savedSnap.val();
+ if (saved && typeof saved === "object") {
+ if (typeof saved.defaultButtonName === "string" && saved.defaultButtonName.trim()) setTgDefaultButtonName(normalizeTelegramButtonText(saved.defaultButtonName));
+ if (Array.isArray(saved.buttons)) setTgButtons(saved.buttons.map((b: any) => ({ name: normalizeTelegramButtonText(String(b?.name || "")), url: String(b?.url || "") })));
+ else setTgButtons([]);
+ } else { setTgButtons([]); }
+ } catch {}
+ })();
+ }
+ }
+ }, 350);
+ }} disabled={!tgTitle.trim()} className="flex-1 py-3 rounded-lg text-sm font-bold bg-gradient-to-r from-blue-600 to-indigo-600 text-white flex items-center justify-center gap-2 disabled:opacity-50">
+ <Send size={14} /> Go to Post
+ </button>
+ </div>
+ </div>
+ </div>
+ )}
+ </div>
+ </div>
+ );
+ })()}
+
+ {activeSection === "movies" && (
+ <div>
+ <div className="flex gap-2 overflow-x-auto pb-2 mb-3 scrollbar-hide">
+ <button onClick={() => setMoviesTab("mv-list")} className={`flex-shrink-0 px-4 py-2 rounded-lg text-[13px] font-medium transition-colors ${moviesTab === "mv-list" ? "bg-indigo-600 text-white" : "bg-[#141422] border border-white/8 text-zinc-400"}`}>
+ All Movies
+ </button>
+ <button onClick={() => setMoviesTab("mv-add")} className={`flex-shrink-0 px-4 py-2 rounded-lg text-[13px] font-medium transition-colors ${moviesTab === "mv-add" ? "bg-indigo-600 text-white" : "bg-[#141422] border border-white/8 text-zinc-400"}`}>
+ Add New
+ </button>
+ <button onClick={() => { setMoviesTab("mv-manual"); setMovieEditId(""); setMovieForm({ title: "", poster: "", backdrop: "", year: "", rating: "", language: "Hindi", category: "", storyline: "", visibility: "public", dubType: "official" }); setMovieCast([]); setMvPartsData([{ partNumber: 1, title: "", link: "", link480: "", link720: "", link1080: "", link4k: "" }]); mvPartsBaselineRef.current = new Set(); }} className={`flex-shrink-0 px-4 py-2 rounded-lg text-[13px] font-medium transition-colors ${moviesTab === "mv-manual" ? "bg-emerald-600 text-white" : "bg-[#141422] border border-white/8 text-zinc-400"}`}>
+ Manual
+ </button>
+  {/* AN Movies tab removed â€” AN is API-only */}
+ </div>
+
+ {moviesTab === "mv-list" && (
+ <div>
+ {/* Search bar */}
+ <div className="mb-3">
+ <div className="relative">
+ <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-purple-500" />
+ <input value={mvListSearch} onChange={e => setMvListSearch(e.target.value)}
+ className={`${inputClass} pl-9`} placeholder="Search movies..." />
+ </div>
+ </div>
+ {(() => {
+  const filtered = filteredMoviesAdminList;
+   const visible = filtered.slice(0, mvListLimit);
+   return filtered.length === 0 ? (
+   adminContentLoading.movies && !deferredMvListSearch.trim() ? (
+   <div className="space-y-3 py-2">
+   {[0, 1, 2, 3].map(i => <div key={i} className="h-[145px] rounded-[14px] border border-white/5 bg-[#1A1A2E] animate-pulse" />)}
+   </div>
+   ) : <p className="text-[#957DAD] text-[13px] text-center py-8">{deferredMvListSearch.trim() ? "No matching movies" : "No movies yet"}</p>
+   ) : <>
+   {visible.map(item => (
+  <div key={item.id} className="admin-content-card bg-[#1A1A2E] border border-white/5 rounded-[14px] p-3.5 mb-3 hover:border-purple-500/30 transition-colors">
+  <div className="flex gap-3.5">
+   <CachedImg src={item.poster || ""} className="admin-content-list-img w-20 h-[115px] rounded-[10px] object-cover flex-shrink-0 bg-[#141422]"
+  loading="eager" decoding="async" fetchPriority="high"
+  onError={e => { (e.target as HTMLImageElement).src = "https://via.placeholder.com/80x115/1A1A2E/9D4EDD?text=N"; }} />
+  <div className="flex-1 min-w-0">
+  <h4 className="text-sm font-semibold mb-1 truncate">{item.title || "Untitled"}</h4>
+  <p className="text-[11px] text-[#D1C4E9] mb-2">{item.year || "N/A"} â€¢ {item.rating || "N/A"}â­ â€¢ {item.language || "N/A"}</p>
+  <div className="flex items-center gap-2 flex-wrap">
+  <p className="text-[11px] text-[#D1C4E9]">{item.category || "Uncategorized"}</p>
+  </div>
+  <div className="flex flex-wrap gap-2 mt-2.5">
+  <button onClick={() => editMovie(item.id)} className={`${btnSecondary} px-3.5 py-2 text-[11px] font-semibold flex items-center gap-1.5`}>
+  <Edit size={12} /> Edit
+  </button>
+  <button onClick={() => deleteMovie(item.id)} className="bg-red-500/20 border border-red-500/30 text-pink-500 px-3.5 py-2 rounded-xl text-[11px] font-semibold flex items-center gap-1.5">
+  <Trash2 size={12} /> Delete
+  </button>
+  </div>
+  </div>
+  </div>
+  </div>
+   ))}
+   {filtered.length > visible.length && (
+    <div className="py-3 flex flex-col items-center gap-1.5">
+     <button
+      onClick={() => setMvListLimit(v => v + ADMIN_LIST_PAGE)}
+      className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-[12px] font-semibold shadow-lg shadow-purple-500/20 transition-all active:scale-95"
+     >
+      Load More ({filtered.length - visible.length} left)
+     </button>
+     <span className="text-[10px] text-[#957DAD]">Showing {visible.length} of {filtered.length}</span>
+    </div>
+   )}
+  </>;
+ })()}
+ </div>
+ )}
+
+ {(moviesTab === "mv-add" || moviesTab === "mv-manual") && (
+ <div>
+ {moviesTab === "mv-add" && (
+ <div className={`${glassCard} p-4 mb-4`}>
+ <h3 className="text-sm font-semibold mb-3.5 flex items-center gap-2"><Search size={14} className="text-purple-500" /> Search Movie</h3>
+ <div className="flex gap-2.5 mb-3.5">
+ <input value={movieSearch} onChange={e => setMovieSearch(e.target.value)} onKeyDown={e => e.key === "Enter" && searchTMDBMovies()}
+ className={`${inputClass} flex-1`} placeholder="Search movie name..." />
+ <button onClick={searchTMDBMovies} className={`${btnPrimary} px-4 py-3.5`}><Search size={16} /></button>
+ </div>
+ {movieResults.length > 0 && (
+ <div>
+ <p className="text-xs text-[#D1C4E9] mb-2.5">Click to fetch details:</p>
+ <div className="grid grid-cols-3 gap-3">
+ {movieResults.map(item => (
+ <div key={item.id} onClick={() => fetchMovieDetails(item.id)}
+ className="bg-[#1A1A2E] rounded-xl overflow-hidden cursor-pointer border-2 border-transparent hover:border-purple-500 hover:scale-[1.03] transition-all">
+ <CachedImg src={item.poster_path ? TMDB_IMG_BASE + "w342" + item.poster_path : ""} className="w-full aspect-[2/3] object-cover"
+ onError={e => { (e.target as HTMLImageElement).src = "https://via.placeholder.com/200x300/1A1A2E/9D4EDD?text=No+Image"; }} />
+ <div className="p-2.5">
+ <p className="text-[11px] font-semibold leading-tight line-clamp-2">{item.title}</p>
+ <p className="text-[10px] text-purple-500 mt-1 font-semibold">{item.release_date?.split("-")[0] || "N/A"}</p>
+ </div>
+ </div>
+ ))}
+ </div>
+ </div>
+ )}
+ </div>
+ )}
+
+ {movieForm && (
+ <>
+ {movieForm.backdrop && (
+ <div className="relative rounded-[14px] overflow-hidden mb-5">
+ <CachedImg src={movieForm.backdrop || movieForm.poster} className="w-full aspect-video object-cover" loading="lazy" decoding="async" />
+ <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-transparent to-transparent" />
+ <div className="absolute bottom-4 left-4 right-4">
+ <div className="text-lg font-bold">{movieForm.title}</div>
+ <div className="text-xs text-[#D1C4E9] mt-1">{movieForm.year} â€¢ {movieForm.rating} â­</div>
+ </div>
+ </div>
+ )}
+
+ <InlineBackdropAi
+ title={movieForm.title || ""}
+ year={movieForm.year}
+ genres={Array.isArray(movieForm.genres) ? movieForm.genres : (movieForm.category ? [movieForm.category] : undefined)}
+ overview={movieForm.storyline}
+ contentId={movieForm.id}
+ contentType="movies"
+ currentBackdrop={movieForm.backdrop}
+ currentLogo={movieForm.logo}
+ onApply={(mode, url) => setMovieForm((f: any) => ({ ...f, [mode]: url }))}
+ glassCard={glassCard} inputClass={inputClass} btnPrimary={btnPrimary} btnSecondary={btnSecondary}
+ />
+ <div className={`${glassCard} p-4 mb-4`}>
+ <div className="text-base font-semibold mb-4 flex items-center gap-2.5"><span className="text-purple-500">â„¹ï¸</span> Movie Details</div>
+ {["title", "logo", "poster", "backdrop", "trailer"].map(field => (
+ <div key={field} className="mb-4">
+ <label className="block text-xs text-[#D1C4E9] mb-2 font-medium capitalize">{field === "logo" ? "Title Logo URL" : field === "trailer" ? "Trailer (YouTube Link)" : field.charAt(0).toUpperCase() + field.slice(1) + " URL"}</label>
+ <div className="flex gap-2">
+ <input value={movieForm[field] || ""} onChange={e => setMovieForm({ ...movieForm, [field]: e.target.value })}
+ className={`${inputClass} flex-1`} placeholder={`${field}...`} />
+ {(field === "poster" || field === "backdrop") && (
+ <label className={`${btnSecondary} !px-3 cursor-pointer flex items-center gap-1`}>
+ <Image size={14} />
+ <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
+ const file = e.target.files?.[0];
+ if (!file) return;
+ try {
+ toast.info("Uploading...");
+ const { uploadToImgbb } = await import("@/lib/imgbbUpload");
+ const url = await uploadToImgbb(file);
+ setMovieForm(f => ({ ...f, [field]: url }));
+ toast.success(`${field} uploaded!`);
+ } catch { toast.error("Upload failed"); }
+ }} />
+ </label>
+ )}
+ </div>
+ </div>
+ ))}
+  <div className={`grid gap-3 ${releaseContent.endsWith("|movie") ? "grid-cols-2" : "grid-cols-1 sm:grid-cols-3"}`}>
+ <div className="mb-4">
+ <label className="block text-xs text-[#D1C4E9] mb-2 font-medium">Year</label>
+ <input value={movieForm.year || ""} onChange={e => setMovieForm({ ...movieForm, year: e.target.value })} className={inputClass} placeholder="Year" />
+ </div>
+ <div className="mb-4">
+ <label className="block text-xs text-[#D1C4E9] mb-2 font-medium">Rating</label>
+ <input value={movieForm.rating || ""} onChange={e => setMovieForm({ ...movieForm, rating: e.target.value })} className={inputClass} placeholder="Rating" />
+ </div>
+ </div>
+ <div className="mb-4">
+ <label className="block text-xs text-[#D1C4E9] mb-2 font-medium">Language</label>
+ <select value={movieForm.language || "Hindi"} onChange={e => {
+   const v = e.target.value;
+   if (v === "__custom__") {
+     const typed = window.prompt("Type custom language / dubber name (e.g. Atomic Dubber Hindi):", "")?.trim();
+     if (typed) setMovieForm({ ...movieForm, language: typed });
+     return;
+   }
+   setMovieForm({ ...movieForm, language: v });
+ }} className={selectClass}>
+ {Array.from(new Set([...languageOptions, movieForm.language].filter(Boolean))).map((l: string) => <option key={l} value={l}>{l}</option>)}
+ <option value="__custom__">âœï¸ Custom language (Type your own)â€¦</option>
+ </select>
+
+ </div>
+ {(() => { const isAnMovie = !!(movieForm.anSlug || movieForm.animeSaltSlug || /animesalt/i.test(String(movieForm.sourceName || ""))); return (
+ <div className={`mb-4 rounded-xl border p-3 ${isAnMovie ? "border-amber-500/20 bg-amber-500/5" : "border-cyan-500/20 bg-cyan-500/5"}`}>
+ <div className="flex items-center justify-between mb-2">
+ <div>
+ <label className={`block text-xs font-medium ${isAnMovie ? "text-amber-200" : "text-cyan-300"}`}>{isAnMovie ? "Audio tracks (per language)" : "Movie Language Links"}</label>
+ {isAnMovie && <p className="text-[9px] text-amber-100/60 mt-0.5">One audio URL per language â€” video stream is shared; player selects audio with decoder-level sync.</p>}
+ </div>
+ <button type="button" onClick={() => setMovieForm({ ...movieForm, audioTracks: [...(movieForm.audioTracks || []), buildEmptyAudioTrack()] })} className={`text-[10px] hover:opacity-80 flex items-center gap-1 ${isAnMovie ? "text-amber-200" : "text-cyan-300"}`}>
+ <Plus size={10} /> Add Language
+ </button>
+ </div>
+ <div className="space-y-2">
+ {((movieForm.audioTracks || []) as any[]).map((track, index) => (
+ <div key={`movie-audio-${index}`} className="rounded-lg border border-white/10 bg-black/20 p-2.5">
+ <div className="flex gap-2 mb-2">
+ <input value={track.label || ""} onChange={e => setMovieForm((prev: any) => {
+ const next = [...(prev.audioTracks || [])];
+ next[index] = { ...next[index], label: e.target.value };
+ return { ...prev, audioTracks: next };
+ })} className={`${inputClass} flex-1 !py-1.5 !text-[10px]`} placeholder={isAnMovie ? "Label (e.g. Hindi)" : "Label (Hindi dub)"} />
+ <input value={track.language || ""} onChange={e => setMovieForm((prev: any) => {
+ const next = [...(prev.audioTracks || [])];
+ next[index] = { ...next[index], language: e.target.value };
+ return { ...prev, audioTracks: next };
+ })} className={`${inputClass} w-24 !py-1.5 !text-[10px]`} placeholder={isAnMovie ? "hi/ta/te/en" : "Language"} />
+ <button type="button" onClick={() => setMovieForm((prev: any) => ({ ...prev, audioTracks: (prev.audioTracks || []).filter((_: any, i: number) => i !== index) }))} className="text-red-400 hover:text-red-300 p-1"><Trash2 size={10} /></button>
+ </div>
+ <textarea value={track.link || ""} onChange={e => setMovieForm((prev: any) => {
+ const next = [...(prev.audioTracks || [])];
+ next[index] = { ...next[index], link: e.target.value };
+ return { ...prev, audioTracks: next };
+ })} className={`${inputClass} w-full !py-1.5 !text-[10px] mb-2 ${isAnMovie ? "min-h-[44px] resize-none break-all font-mono" : ""}`} placeholder={isAnMovie ? "Audio HLS URL for this language" : "Default language link"} rows={isAnMovie ? 2 : 1} />
+ {!isAnMovie && (
+ <div className="grid grid-cols-2 gap-1">
+ {[
+ ["link480", "480p"],
+ ["link720", "720p"],
+ ["link1080", "1080p"],
+ ["link4k", "4K"],
+ ].map(([field, label]) => (
+ <input key={field} value={track[field] || ""} onChange={e => setMovieForm((prev: any) => {
+ const next = [...(prev.audioTracks || [])];
+ next[index] = { ...next[index], [field]: e.target.value };
+ return { ...prev, audioTracks: next };
+ })} className={`${inputClass} !py-1 !text-[9px]`} placeholder={`${label} link`} />
+ ))}
+ </div>
+ )}
+ </div>
+ ))}
+ </div>
+ </div>
+  ); })()}
+ <div className="mb-4">
+ <label className="block text-xs text-[#D1C4E9] mb-2 font-medium">Category</label>
+ {(() => {
+   const known = new Set(categoryList.map(c => c.name));
+   const cur = movieForm.category || "";
+   const isCustom = !!cur && !known.has(cur);
+   const selVal = isCustom ? "__custom__" : cur;
+   return (
+     <>
+       <select value={selVal} onChange={e => {
+         const v = e.target.value;
+         if (v === "__custom__") {
+           const typed = window.prompt("Type custom category (comma-separated allowed):", isCustom ? cur : "")?.trim();
+           if (typed) setMovieForm({ ...movieForm, category: typed });
+         } else {
+           setMovieForm({ ...movieForm, category: v });
+         }
+       }} className={selectClass}>
+         <option value="">Select Category</option>
+         {categoryList.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+         <option value="__custom__">âœï¸ Customize (Type your own)â€¦</option>
+       </select>
+       {isCustom && (
+         <input value={cur} onChange={e => setMovieForm({ ...movieForm, category: e.target.value })}
+           placeholder="Custom category (e.g. Action, Adventure, Fantasy)"
+           className={inputClass + " mt-2"} />
+       )}
+     </>
+   );
+ })()}
+ </div>
+ <div className="mb-4">
+ <label className="block text-xs text-[#D1C4E9] mb-2 font-medium">Dub Type</label>
+ <div className="flex gap-2">
+ <button type="button" onClick={() => setMovieForm({ ...movieForm, dubType: "official" })}
+ className={`flex-1 py-2.5 rounded-lg text-[12px] font-semibold border transition-all ${(movieForm.dubType || "official") === "official" ? "bg-indigo-600 border-indigo-500 text-white" : "bg-[#141422] border-white/8 text-zinc-400"}`}>
+ {TG_DUB_TAGS.official}
+ </button>
+ <button type="button" onClick={() => setMovieForm({ ...movieForm, dubType: "fandub" })}
+ className={`flex-1 py-2.5 rounded-lg text-[12px] font-semibold border transition-all ${movieForm.dubType === "fandub" ? "bg-orange-600 border-orange-500 text-white" : "bg-[#141422] border-white/8 text-zinc-400"}`}>
+ {TG_DUB_TAGS.fandub}
+ </button>
+ </div>
+ </div>
+ <div className="mb-4">
+ <label className="block text-xs text-[#D1C4E9] mb-2 font-medium">Storyline</label>
+ <textarea value={movieForm.storyline || ""} onChange={e => setMovieForm({ ...movieForm, storyline: e.target.value })}
+ className={`${inputClass} min-h-[100px] resize-y`} placeholder="Storyline" />
+ </div>
+ {movieCast.length > 0 && (
+ <div className="mb-4">
+ <label className="block text-xs text-[#D1C4E9] mb-2 font-medium">Cast (Auto-fetched)</label>
+ <div className="flex gap-3 overflow-x-auto pb-2.5 scrollbar-hide">
+ {movieCast.map((c, i) => (
+ <div key={i} className="flex-shrink-0 w-[70px] text-center">
+ <CachedImg src={c.photo || ""} className="w-[60px] h-[60px] rounded-[10px] object-cover mb-1.5 mx-auto"
+ onError={e => { (e.target as HTMLImageElement).src = "https://via.placeholder.com/60x60/1A1A2E/9D4EDD?text=N"; }} />
+ <p className="text-[10px] font-medium truncate">{c.name}</p>
+ </div>
+ ))}
+ </div>
+ </div>
+ )}
+ {/* Legacy top-level Movie Link / Quality / Download Link removed â€” parts-only flow. */}
+ </div>
+
+
+ {/* ==================== MOVIE PARTS (mirrors Web Series episodes) ==================== */}
+ <div className={`${glassCard} p-4 mb-4`}>
+   <div className="flex items-center justify-between mb-3">
+     <h3 className="text-sm font-semibold flex items-center gap-2">
+       <List size={14} className="text-purple-400" /> Movie Parts <span className="text-[10px] text-zinc-500 font-normal">(optional â€” for multi-part movies)</span>
+     </h3>
+     <div className="flex gap-2">
+       <button onClick={() => setMvPartsJsonImportMode(v => !v)} className={`${btnSecondary} px-3 py-2 text-[11px] flex items-center gap-1`}>
+         <FolderOpen size={12} /> JSON
+       </button>
+       <button onClick={addMoviePart} className={`${btnSecondary} px-3 py-2 text-[11px] flex items-center gap-1`}>
+         <Plus size={12} /> Add New Part
+       </button>
+     </div>
+   </div>
+   <p className="text-[10px] text-zinc-500 mb-3">
+     Single part â†’ shown as "Main" (plays like a normal movie). Add more parts â†’ player shows a Parts list (Part 1, Part 2â€¦) just like Web Series episodes. Download uses each part's quality links automatically â€” no separate download field needed.
+   </p>
+
+   {mvPartsJsonImportMode && (
+     <div className="bg-gradient-to-br from-blue-900/30 to-indigo-900/20 rounded-2xl border border-blue-500/20 p-4 mb-4 space-y-3">
+       <div className="flex items-center gap-2 mb-1">
+         <div className="w-7 h-7 rounded-lg bg-blue-500/20 flex items-center justify-center"><FolderOpen size={14} className="text-blue-400" /></div>
+         <div>
+           <p className="text-[12px] font-semibold text-blue-200">JSON Import â€” Parts</p>
+           <p className="text-[9px] text-blue-400/70">Upload .json file or paste JSON text</p>
+         </div>
+       </div>
+       <div className="grid grid-cols-2 gap-3">
+         <div className="bg-black/20 rounded-xl border border-blue-500/10 p-3 flex flex-col items-center justify-center gap-2 min-h-[120px] cursor-pointer hover:bg-blue-500/10 hover:border-blue-500/30 transition-all"
+           onClick={() => mvJsonFileRef.current?.click()}>
+           <input type="file" ref={mvJsonFileRef} accept=".json,application/json" multiple onChange={mvHandleJsonFileUpload} className="hidden" />
+           <div className="w-10 h-10 rounded-full bg-blue-500/15 flex items-center justify-center"><Download size={18} className="text-blue-400" /></div>
+           <p className="text-[11px] font-semibold text-blue-300 text-center">Upload .json</p>
+           <p className="text-[9px] text-blue-400/50 text-center">Click to browse</p>
+         </div>
+         <div className="bg-black/20 rounded-xl border border-blue-500/10 p-3 flex flex-col gap-2">
+           <textarea value={mvJsonPasteText} onChange={e => setMvJsonPasteText(e.target.value)}
+             placeholder='{ "parts": [{ "partNumber": 1, "link": "..." }] }'
+             className="w-full flex-1 bg-black/30 border border-white/5 rounded-lg px-2.5 py-2 text-[10px] text-white placeholder:text-blue-400/30 focus:border-blue-500/50 focus:outline-none min-h-[70px] resize-none font-mono" />
+           <button onClick={mvHandleJsonPaste} disabled={!mvJsonPasteText.trim()}
+             className="w-full py-2 rounded-lg text-[10px] font-bold bg-gradient-to-r from-blue-600 to-indigo-600 text-white disabled:opacity-30 flex items-center justify-center gap-1.5 hover:from-blue-500 hover:to-indigo-500 transition-all">
+             <Download size={11} /> Import
+           </button>
+         </div>
+       </div>
+       <p className="text-[9px] text-blue-400/50 text-center">
+         Format: <code className="bg-black/30 px-1.5 py-0.5 rounded text-blue-300/70">parts: [{'{ partNumber, link, link480... }'}]</code> â€” existing quality links are preserved (smart merge)
+       </p>
+     </div>
+   )}
+
+   {mvPartsData.length === 0 && (
+     <div className="text-center py-6 rounded-xl bg-black/20 border border-dashed border-white/10">
+       <p className="text-[11px] text-zinc-500 mb-3">No parts yet â€” click <span className="text-purple-300 font-semibold">Add New Part</span> to add Part 1, Part 2, etc.</p>
+       <button onClick={addMoviePart} className={`${btnPrimary} px-4 py-2 text-[11px] inline-flex items-center gap-1.5`}>
+         <Plus size={12} /> Add New Part
+       </button>
+     </div>
+   )}
+
+   {mvPartsData.map((p, pIdx) => (
+     <div key={pIdx} className="bg-black/30 rounded-xl p-3 mb-3 border border-white/5">
+       <div className="flex items-center justify-between mb-3">
+         <span className="text-xs font-semibold text-purple-400">{mvPartsData.length === 1 ? "Main" : `Part ${p.partNumber}`}</span>
+         <button onClick={() => removeMoviePart(pIdx)} className="bg-red-500/20 text-pink-500 p-1.5 rounded-lg hover:bg-red-500/40 transition-all"><Trash2 size={12} /></button>
+       </div>
+       <div className="grid grid-cols-1 gap-2 mb-2">
+         <input value={p.title || ""} onChange={e => updateMoviePartField(pIdx, "title", e.target.value)}
+           className={`${inputClass} !py-2 !text-xs`} placeholder={mvPartsData.length === 1 ? "Title (optional)" : `Part ${p.partNumber} title (optional)`} />
+       </div>
+       <div className="space-y-2">
+         <div>
+           <span className="text-[10px] text-[#D1C4E9] font-medium mb-1 block">Default link <span className="text-purple-500">*</span></span>
+           <textarea value={p.link || ""} onChange={e => updateMoviePartField(pIdx, "link", e.target.value)}
+             className={`${inputClass} w-full !py-2 !text-[10px] min-h-[44px] resize-none break-all`} placeholder="Default streaming/embed link" rows={2} />
+         </div>
+         {(["link480", "link720", "link1080", "link4k"] as const).map(q => (
+           <div key={q}>
+             <span className="text-[10px] text-[#D1C4E9] font-medium mb-1 block">
+               {q === "link480" ? "480p" : q === "link720" ? "720p" : q === "link1080" ? "1080p" : "4K"}
+             </span>
+             <textarea value={(p as any)[q] || ""} onChange={e => updateMoviePartField(pIdx, q, e.target.value)}
+               className={`${inputClass} w-full !py-2 !text-[10px] min-h-[40px] resize-none break-all`}
+               placeholder={`${q === "link480" ? "480p" : q === "link720" ? "720p" : q === "link1080" ? "1080p" : "4K"} link (optional)`} rows={2} />
+           </div>
+         ))}
+       </div>
+     </div>
+   ))}
+ </div>
+
+ <div className="flex gap-2">
+ <button onClick={saveMovie} className={`${btnPrimary} flex-1 py-4 text-[15px] font-semibold flex items-center justify-center gap-2`}>
+ <Save size={18} /> Normal Save
+ </button>
+ <button
+ onClick={async () => {
+   // Capture form + parts BEFORE saveMovie resets them
+   const capturedForm = movieForm ? { ...movieForm } : null;
+   const capturedParts = (mvPartsData || []).map(p => ({ ...p }));
+
+   // Detect newly-added parts (partNumbers not present in baseline)
+   const baseline = mvPartsBaselineRef.current || new Set<number>();
+   const currentNums = capturedParts.map(p => Number(p.partNumber || 0)).filter(n => n > 0).sort((a, b) => a - b);
+   const addedNums = currentNums.filter(n => !baseline.has(n));
+   let autoRange: { start: number; end: number } | null = null;
+   // Single "Main" part â†’ treat as full movie (no per-part range), otherwise show which parts were added.
+   if (addedNums.length > 0 && capturedParts.length > 1) autoRange = { start: addedNums[0], end: addedNums[addedNums.length - 1] };
+   setMvPartsAutoRange(autoRange);
+
+   mvNotifyContextRef.current = { movieId: movieEditId || "__pending__", form: capturedForm, parts: capturedParts, addedParts: addedNums };
+   const savedId = await saveMovie();
+   if (!savedId) return;
+   if (mvNotifyContextRef.current && (mvNotifyContextRef.current.movieId === "__pending__" || !mvNotifyContextRef.current.movieId)) {
+     mvNotifyContextRef.current.movieId = savedId;
+   }
+   setMvSaveNotifyModal(true);
+ }}
+ className="flex-1 py-4 text-[15px] font-semibold flex items-center justify-center gap-2 bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-500 hover:to-purple-500 text-white rounded-xl transition-colors cursor-pointer border-none"
+ >
+ <Bell size={16} /> Save + Notify
+ </button>
+ </div>
+
+ </>
+ )}
+
+ </div>
+ )}
+ </div>
+ )}
+
+ {/* Movie Save + Notify Modal â€” rendered at page level so tab switching after saveMovie() cannot unmount it (was causing flash-and-close bug) */}
+ {mvSaveNotifyModal && (() => {
+ const ctx = mvNotifyContextRef.current;
+ const ctxForm = ctx?.form;
+ const ctxMovieId = ctx?.movieId || "";
+ return (
+ <div className="admin-isolated-overlay fixed inset-0 z-[500] bg-black/80 flex items-center justify-center p-4" onClick={() => { setMvSaveNotifyModal(false); mvNotifyContextRef.current = null; setMvPartsAutoRange(null); }}>
+ <div className="admin-optimized-panel admin-scroll-smooth bg-[#16162A] border border-white/10 rounded-2xl w-full max-w-[440px] max-h-[80vh] overflow-y-auto p-5" onClick={e => e.stopPropagation()}>
+ <h3 className="text-sm font-bold mb-3 flex items-center gap-2"><Zap size={14} className="text-pink-500" /> New Movie Release</h3>
+ <p className="text-[11px] text-zinc-400 mb-3">{ctxForm?.title ? `"${ctxForm.title}" â€” Movie will be posted as a new release` : "Movie release"}</p>
+
+ {(ctxForm?.backdrop || ctxForm?.poster) && (
+ <div className="mb-3 rounded-lg overflow-hidden border border-white/10">
+ <CachedImg src={ctxForm.backdrop || ctxForm.poster} className="w-full aspect-video object-cover" loading="eager" decoding="async" />
+ </div>
+ )}
+
+ <div className="mb-3 p-2.5 rounded-lg bg-purple-500/10 border border-purple-500/30">
+   <p className="text-[10px] font-bold text-purple-200 uppercase tracking-wider mb-1">Auto-tracked</p>
+   {mvPartsAutoRange ? (
+     <p className="text-[12px] font-semibold text-purple-100">
+       Part {mvPartsAutoRange.start}{mvPartsAutoRange.end !== mvPartsAutoRange.start ? `-${mvPartsAutoRange.end}` : ""} Added
+     </p>
+   ) : (
+     <p className="text-[12px] font-semibold text-purple-100">Full Movie Added</p>
+   )}
+   <p className="text-[9px] text-purple-200/70 mt-0.5">
+     {mvPartsAutoRange ? "New parts detected since edit start â€” users will see this in the notification." : "No new parts detected â€” sending as a full-movie release."}
+   </p>
+ </div>
+
+ <div className="mb-3 p-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30">
+ <p className="text-[10px] font-bold text-emerald-300 uppercase tracking-wider mb-1">This will do</p>
+ <ul className="text-[11px] text-emerald-100 space-y-0.5 list-disc pl-4">
+ <li>Add a "New Release" entry (Movie)</li>
+ <li>Send browser push (FCM) to all users</li>
+ <li>Redirect to Telegram Post with this movie preselected</li>
+ </ul>
+ </div>
+
+ <div className="flex gap-2">
+ <button
+ onClick={() => { setMvSaveNotifyModal(false); mvNotifyContextRef.current = null; setMvPartsAutoRange(null); }}
+ className="flex-1 py-3 rounded-lg text-sm font-bold bg-zinc-700 text-white flex items-center justify-center gap-2"
+ >
+ <X size={14} /> Cancel
+ </button>
+ <button
+ onClick={async () => {
+ if (!ctxMovieId || !ctxForm?.title) { toast.error("Movie context missing"); return; }
+ try {
+ setAdminBusyTask("Adding new releaseâ€¦");
+ await yieldAdminFrame();
+ const partsRange = mvPartsAutoRange;
+ const releaseLabel = partsRange
+   ? `Part ${partsRange.start}${partsRange.end !== partsRange.start ? `-${partsRange.end}` : ""} Added`
+   : "Full Movie Added";
+ const newRelease: any = {
+ contentId: ctxMovieId,
+ contentType: "movie",
+ title: ctxForm.title,
+ poster: ctxForm.poster || "",
+ year: ctxForm.year || "N/A",
+ rating: ctxForm.rating || "N/A",
+ visibility: ctxForm.visibility || "public",
+ episodeInfo: partsRange
+   ? { type: "movie-parts", seasonName: "Movie", partStart: partsRange.start, partEnd: partsRange.end, label: releaseLabel }
+   : { type: "movie", seasonName: "Movie", label: releaseLabel },
+ timestamp: Date.now(),
+ active: true,
+ };
+ await set(push(ref(db, "newEpisodeReleases")), newRelease);
+ setAdminBusyTask(null);
+ toast.success("âœ… New Release added!");
+
+    // Browser push removed.
+
+ const movieIdForRedirect = ctxMovieId;
+ setMvSaveNotifyModal(false);
+ mvNotifyContextRef.current = null;
+ setMvPartsAutoRange(null);
+ setActiveSection("telegram-post");
+ setTimeout(async () => {
+ const capturedMovieType = partsRange
+   ? (partsRange.end !== partsRange.start ? `Part ${partsRange.start}-${partsRange.end}` : `Part ${partsRange.start}`)
+   : "Full Movie";
+ const matching = releasesData
+   .filter(r => r.contentId === movieIdForRedirect)
+   .sort((a: any, b: any) => (b.timestamp || 0) - (a.timestamp || 0))[0];
+ if (matching) {
+ await fillTelegramFromRelease(matching.id);
+ } else {
+ const mv = moviesData.find(m => m.id === movieIdForRedirect);
+ if (mv) {
+ setTgSelectedRelease(movieIdForRedirect);
+ setTgSelectedAnimeId(String(movieIdForRedirect));
+ setTgTitle(mv.title || "");
+ const backdrop = mv.backdrop || mv.poster || "";
+ setTgPosterUrl(backdrop.replace('/original/', '/w1280/').replace('/w780/', '/w1280/'));
+ if (mv.rating) setTgRating(String(mv.rating));
+ setTgButtonLink(buildEpisodeShareUrl(movieIdForRedirect));
+ try {
+ const { genres, rating } = await resolveTelegramGenresAndRating(String(mv.tmdbId || ""), mv.title || "", mv.category || "");
+ if (genres.length > 0) setTgGenres(genres.join(", "));
+ if (rating) setTgRating(rating);
+ } catch {}
+ }
+ }
+ // ğŸ¬ Always force movie mode + captured part range for movie releases.
+ setTgContentKind("movie");
+ setTgSeason("Movie");
+ setTgMovieType(capturedMovieType);
+ setTgNewEpAdded(capturedMovieType);
+ }, 250);
+
+ } catch (err: any) {
+ setAdminBusyTask(null);
+ toast.error("Error: " + err.message);
+ }
+ }}
+ className="flex-1 py-3 rounded-lg text-sm font-bold bg-gradient-to-r from-pink-600 to-purple-600 text-white flex items-center justify-center gap-2"
+ >
+ <Zap size={14} /> Release + Notify
+ </button>
+ </div>
+ </div>
+ </div>
+ );
+ })()}
+
+ {/* ==================== USERS ==================== */}
+ {activeSection === "users" && (
+ <div>
+ {/* Password Lookup */}
+ <div className={`${glassCard} p-4 mb-4`}>
+ <h3 className="text-sm font-semibold mb-3.5 flex items-center gap-2">
+ <Search size={14} className="text-purple-500" /> ğŸ” User Password Lookup
+ </h3>
+ <UserPasswordLookup inputClass={inputClass} btnPrimary={btnPrimary} />
+ </div>
+
+ <div className={`${glassCard} p-4 mb-4`}>
+ <div className="flex justify-between items-center mb-3.5">
+ <h3 className="text-sm font-semibold">User Statistics</h3>
+ <button onClick={() => toast.info("Users auto-synced!")} className="text-purple-500"><RefreshCw size={16} /></button>
+ </div>
+ <div className="grid grid-cols-2 gap-3">
+ <div className="bg-green-500/10 p-4 rounded-xl border border-green-500/20">
+ <div className="flex items-center gap-2 mb-2">
+ <div className="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse" />
+ <span className="text-xs text-green-400">Online</span>
+ </div>
+ <div className="text-2xl font-bold">{onlineUsers}</div>
+ </div>
+ <div className="bg-red-500/10 p-4 rounded-xl border border-red-500/20">
+ <div className="flex items-center gap-2 mb-2">
+ <div className="w-2.5 h-2.5 rounded-full bg-red-500" />
+ <span className="text-xs text-red-400">Offline</span>
+ </div>
+ <div className="text-2xl font-bold">{offlineUsers}</div>
+ </div>
+ </div>
+ </div>
+ <div className={`${glassCard} p-4 mb-4`}>
+ <h3 className="text-sm font-semibold mb-2 flex items-center gap-2">
+ <Trash2 size={14} className="text-red-400" /> Delete All Guest Users
+ </h3>
+ <p className="text-[11px] text-[#957DAD] mb-3">
+ Real users = those registered in Firebase Auth (Email or Google). Everyone else in the database is a guest and will be removed in one click.
+ </p>
+ {(() => {
+ const guestList = usersData.filter(u => guestUidSet.has(String(u.id)));
+ return (
+ <>
+ <div className="text-xs text-[#D1C4E9] mb-3">
+ Guest accounts found: <span className="text-red-400 font-bold">{guestList.length}</span>
+ <span className="block text-[10px] text-[#957DAD] mt-1">
+ Email & Google sign-ins are protected and will never be deleted.
+ </span>
+ </div>
+ <button
+ onClick={async () => {
+ if (guestList.length === 0) { toast.info("No guest users to delete"); return; }
+ if (!window.confirm(`Delete ${guestList.length} guest user(s)? They will be auto-logged out.`)) return;
+ try {
+ await Promise.all(guestList.map(u =>
+ update(ref(db), {
+ [`users/${u.id}`]: null,
+ [`deletedAccounts/${u.id}`]: { at: Date.now(), reason: "guest-bulk-delete" },
+ })
+ ));
+ toast.success(`âœ… Deleted ${guestList.length} guest user(s)`);
+ } catch (e: any) {
+ toast.error(`Failed: ${e?.message || "unknown"}`);
+ }
+ }}
+ disabled={guestList.length === 0}
+ className="w-full py-2.5 rounded-xl bg-gradient-to-r from-red-600 to-red-500 text-white text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+ >
+ <Trash2 size={14} /> Delete All Guest Users ({guestList.length})
+ </button>
+ </>
+ );
+ })()}
+ </div>
+
+ <div className={`${glassCard} p-4`}>
+ <div className="flex justify-between items-center mb-3">
+ <h3 className="text-sm font-semibold">All Users ({usersData.length})</h3>
+ </div>
+ <div className="relative mb-3">
+ <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-purple-500" />
+ <input
+ value={userSearchQuery}
+ onChange={e => setUserSearchQuery(e.target.value)}
+ className={`${inputClass} pl-9`}
+ placeholder="ğŸ” Search by name, email or UID..."
+ />
+ </div>
+ {(() => {
+ const q = debouncedUserSearch.trim();
+ const filtered = filteredUsersList;
+ if (usersData.length === 0) {
+ return <p className="text-[#957DAD] text-[13px] text-center py-5">No users found</p>;
+ }
+ if (filtered.length === 0) {
+ return <p className="text-[#957DAD] text-[13px] text-center py-5">No matching users for "{q}"</p>;
+ }
+ // Cap rendering when not searching to avoid lag with hundreds of users
+ const displayList = q ? filtered : filtered.slice(0, 100);
+ return (
+ <>
+ <p className="text-[11px] text-[#957DAD] mb-2">
+ {q
+ ? `Showing ${filtered.length} match${filtered.length === 1 ? "" : "es"} for "${q}"`
+ : `Showing first ${displayList.length} of ${usersData.length} (search to find more)`}
+ </p>
+ {displayList.map(user => (
+ <div key={user.id} className="bg-[#1A1A2E] rounded-xl p-3.5 flex items-center gap-3 mb-2.5 border border-white/5">
+ <div className="w-[45px] h-[45px] rounded-full bg-gradient-to-br from-purple-500 to-purple-800 flex items-center justify-center font-bold text-lg flex-shrink-0">
+ {(user.name || user.email || "U")[0].toUpperCase()}
+ </div>
+ <div className="flex-1 min-w-0">
+ <p className="text-sm font-semibold truncate">{user.name || "Anonymous"}</p>
+ <p className="text-[11px] text-[#D1C4E9] truncate">{user.email || user.id}</p>
+ <p className="text-[9px] text-[#957DAD] truncate font-mono">{user.id}</p>
+ </div>
+ {guestUidSet.has(String(user.id)) && (
+ <span className="text-[9px] bg-amber-500/20 text-amber-400 px-1.5 py-0.5 rounded font-bold flex-shrink-0">GUEST</span>
+ )}
+ <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${user.online ? "bg-green-500 animate-pulse" : "bg-red-500"}`} />
+ <button
+ onClick={async () => {
+ if (!user.email) { toast.error("User has no email â€” can't grant admin"); return; }
+ try {
+ const snap = await get(ref(db, "admin/authorizedEmails"));
+ const cur = snap.val() || {};
+ const isAlready = Object.values(cur).some((e: any) => e === user.email);
+ if (isAlready) {
+ // Revoke
+ const entry = Object.entries(cur).find(([_, v]) => v === user.email);
+ if (entry) await remove(ref(db, `admin/authorizedEmails/${entry[0]}`));
+ await remove(ref(db, `users/${user.id}/coAdmin`));
+ toast.success(`ğŸš« Admin revoked: ${user.email}`);
+ } else {
+ await set(ref(db, `admin/authorizedEmails/${user.id}`), user.email);
+ await set(ref(db, `users/${user.id}/coAdmin`), { enabled: true, grantedAt: Date.now() });
+ toast.success(`ğŸ‘‘ Admin granted: ${user.email}`);
+ }
+ } catch (e: any) { toast.error(`Failed: ${e?.message || "unknown"}`); }
+ }}
+ className="flex-shrink-0 px-2 h-8 rounded-lg bg-yellow-500/15 hover:bg-yellow-500/30 text-yellow-300 text-[10px] font-bold flex items-center gap-1 transition-colors"
+ title="Toggle co-admin (Google sign-in to /admin)"
+ >
+ ğŸ‘‘
+ </button>
+ <button
+ onClick={async () => {
+ const label = user.email || user.name || user.id;
+ if (!window.confirm(`Delete user "${label}"?\n\nThis will remove them from the database and they will be auto-logged out. This action cannot be undone.`)) return;
+ try {
+ await update(ref(db), {
+ [`users/${user.id}`]: null,
+ [`deletedAccounts/${user.id}`]: { at: Date.now(), reason: "admin-manual-delete", email: user.email || null, name: user.name || null },
+ });
+ toast.success(`âœ… Deleted user: ${label}`);
+ } catch (e: any) {
+ toast.error(`Failed: ${e?.message || "unknown"}`);
+ }
+ }}
+ className="flex-shrink-0 w-8 h-8 rounded-lg bg-red-500/15 hover:bg-red-500/30 text-red-400 flex items-center justify-center transition-colors"
+ title="Delete user"
+ >
+ <Trash2 size={14} />
+ </button>
+ </div>
+ ))}
+ </>
+ );
+ })()}
+ </div>
+ </div>
+ )}
+
+ {/* NOTIFICATIONS section fully removed â€” Telegram posts handle release announcements now */}
+
+ {/* ==================== NEW RELEASES ==================== */}
+ {activeSection === "new-releases" && (
+ <div>
+ <div className={`${glassCard} relative z-[120] overflow-visible p-4 mb-4`}>
+ <h3 className="text-sm font-semibold mb-3.5 flex items-center gap-2">
+ <Zap size={14} className="text-pink-500" /> Manage New Episode Releases
+ </h3>
+ <div className="mb-4" ref={releaseDropdownRef}>
+ <label className="block text-xs text-[#D1C4E9] mb-2 font-medium">Select Content to Add as New Release</label>
+ <div className="relative z-[130]">
+ <button type="button" onClick={() => setReleaseDropdownOpen(!releaseDropdownOpen)}
+ className={`${selectClass} w-full text-left flex items-center gap-2`}>
+ {releaseContent ? (
+ <>
+ <CachedImg src={contentOptions.find(o => o.value === releaseContent)?.poster} alt="" className="w-7 h-10 rounded object-cover flex-shrink-0" />
+ <span className="truncate text-sm">{contentOptions.find(o => o.value === releaseContent)?.label}</span>
+ </>
+ ) : <span className="text-[#957DAD]">Select Content</span>}
+ <ChevronDown size={14} className="ml-auto flex-shrink-0" />
+ </button>
+ {releaseDropdownOpen && (
+ <div className="absolute z-[200] top-full left-0 right-0 mt-1 bg-[#1A1A2E] border border-purple-500/40 rounded-xl max-h-[320px] overflow-hidden shadow-xl flex flex-col">
+ <div className="p-2 border-b border-white/10 flex-shrink-0">
+ <div className="relative">
+ <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-purple-500" />
+ <input
+ value={releaseContentSearch}
+ onChange={e => setReleaseContentSearch(e.target.value)}
+ className="w-full pl-8 pr-3 py-2 bg-[#151521] border border-white/10 rounded-lg text-white text-[12px] focus:border-purple-500 focus:outline-none placeholder:text-[#957DAD]"
+ placeholder="ğŸ” content search ..."
+ autoFocus
+ onClick={e => e.stopPropagation()}
+ />
+ </div>
+ </div>
+ <div className="overflow-y-auto max-h-[260px]">
+ {(() => {
+  const filtered = deferredReleaseContentSearch.trim()
+  ? contentOptions.filter(o => o.label.toLowerCase().includes(deferredReleaseContentSearch.toLowerCase()))
+ : contentOptions;
+  const visible = filtered.slice(0, ADMIN_DROPDOWN_LIMIT);
+ return filtered.length === 0 ? (
+ <p className="text-[#957DAD] text-[11px] text-center py-4">any content à¦ªà¦¾ à¦¯à¦¾à¦¯à¦¼à¦¨à¦¿</p>
+  ) : <>
+  {visible.map(o => (
+ <div key={o.value} className={`flex items-center gap-2.5 p-2 cursor-pointer hover:bg-purple-500/20 rounded-lg m-1 ${releaseContent === o.value ? "bg-purple-500/30" : ""}`}
+ onClick={() => { handleReleaseContentChange(o.value); setReleaseDropdownOpen(false); setReleaseContentSearch(''); }}>
+ <CachedImg src={o.poster} alt="" className="w-8 h-11 rounded object-cover flex-shrink-0 bg-[#2A2A3E]" loading="lazy" decoding="async" />
+ <span className="text-sm truncate">{o.label}</span>
+ </div>
+  ))}
+  {filtered.length > visible.length && <div className="px-3 py-2 text-center text-[10px] text-[#957DAD]">Showing {visible.length}/{filtered.length} â€” type to narrow</div>}
+  </>;
+ })()}
+ </div>
+ </div>
+ )}
+ </div>
+ </div>
+ {showSeasonEpisode && (
+ <>
+ <div className="grid grid-cols-2 gap-3">
+ <div className="mb-4">
+ <label className="block text-xs text-[#D1C4E9] mb-2 font-medium">Season</label>
+ <select value={releaseSeason} onChange={e => handleReleaseSeasonChange(e.target.value)} className={selectClass}>
+ <option value="">Select Season</option>
+ {releaseSeasons.map(s => <option key={s.index} value={s.index}>{s.name}</option>)}
+ </select>
+ </div>
+ <div className="mb-4">
+  <label className="block text-xs text-[#D1C4E9] mb-2 font-medium">Episode start</label>
+ <select value={releaseEpisode} onChange={e => setReleaseEpisode(e.target.value)} className={selectClass}>
+ <option value="">Select Episode</option>
+ {releaseEpisodes.map(ep => <option key={ep.index} value={ep.index}>{ep.name}</option>)}
+ </select>
+ </div>
+  {!releaseContent.endsWith("|movie") && (
+  <div className="mb-4">
+  <label className="block text-xs text-[#D1C4E9] mb-2 font-medium">Episode end</label>
+  <select value={releaseEpisodeEnd} onChange={e => setReleaseEpisodeEnd(e.target.value)} className={selectClass} disabled={releaseEpisode === ""}>
+  <option value="">Same as start</option>
+  {releaseEpisodes.filter(ep => releaseEpisode === "" || ep.index >= parseInt(releaseEpisode)).map(ep => <option key={ep.index} value={ep.index}>{ep.name}</option>)}
+  </select>
+  </div>
+  )}
+ </div>
+ <button onClick={addNewRelease} className={`${btnPrimary} w-full py-4 text-[15px] font-semibold flex items-center justify-center gap-2 mt-2.5`}>
+ <Plus size={18} /> Add as New Episode Release
+ </button>
+ </>
+ )}
+ </div>
+
+ <div className={`${glassCard} relative z-10 p-4`}>
+ <h3 className="text-sm font-semibold mb-3.5 flex items-center gap-2">
+ ğŸ“‹ Active New Releases ({releasesData.length})
+ </h3>
+ <div className="relative mb-3">
+ <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-purple-500" />
+ <input
+ value={releaseSearchQuery}
+ onChange={e => setReleaseSearchQuery(e.target.value)}
+ className={`${inputClass} pl-9`}
+ placeholder="ğŸ” search (Title, episode)..."
+ />
+ </div>
+ {(() => {
+ const filtered = releasesData.filter(r => {
+ if (!releaseSearchQuery.trim()) return true;
+ const q = releaseSearchQuery.toLowerCase();
+ const title = (r.title || '').toLowerCase();
+ const epInfo = r.episodeInfo ? `${r.episodeInfo.seasonName || ''} episode ${r.episodeInfo.episodeNumber || ''}`.toLowerCase() : '';
+ return title.includes(q) || epInfo.includes(q);
+ });
+ return filtered.length === 0 ? (
+ <p className="text-[#957DAD] text-[13px] text-center py-5">{releaseSearchQuery ? 'any à¦°à¦¿à¦²à¦¿à¦œ à¦ªà¦¾ à¦¯à¦¾à¦¯à¦¼à¦¨à¦¿' : 'No new releases yet'}</p>
+ ) : filtered.map(release => {
+ let episodeText = "";
+ if (release.episodeInfo) {
+ episodeText = release.episodeInfo.type === "movie" ? "Movie" : `${release.episodeInfo.seasonName} - Episode ${release.episodeInfo.episodeNumber}`;
+ }
+ return (
+ <div key={release.id} className="bg-[#1A1A2E] border border-purple-500/30 rounded-xl p-4 mb-3">
+ <div className="flex justify-between items-start mb-2">
+ <div>
+ <span className="bg-gradient-to-r from-pink-500 to-pink-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-[10px] inline-flex items-center gap-1">
+ <Zap size={10} /> NEW
+ </span>
+ <span className="text-[11px] text-[#957DAD] ml-2.5">{formatTime(release.timestamp)}</span>
+ </div>
+ <div className="flex gap-1.5">
+ <button onClick={() => toggleReleaseStatus(release.id, release.active)} className={`${release.active ? "text-purple-500" : "text-[#957DAD]"}`}>
+ {release.active ? <Eye size={14} /> : <EyeOff size={14} />}
+ </button>
+ <button onClick={() => deleteRelease(release.id)} className="text-[#957DAD] hover:text-red-400 transition-colors">
+ <X size={14} />
+ </button>
+ </div>
+ </div>
+ <div className="flex gap-3 items-center">
+ <CachedImg src={release.poster || ""} className="w-[50px] h-[75px] rounded-lg object-cover"
+ onError={e => { (e.target as HTMLImageElement).src = "https://via.placeholder.com/50x75/1A1A2E/9D4EDD?text=N"; }} />
+ <div className="flex-1">
+ <h4 className="text-[13px] font-semibold mb-1">{release.title || "Untitled"}</h4>
+ <p className="text-[11px] text-[#D1C4E9]">{release.year || "N/A"} â€¢ {release.rating || "N/A"}â˜…</p>
+ {episodeText && <p className="text-[11px] text-pink-500 mt-0.5">{episodeText}</p>}
+ </div>
+ </div>
+ </div>
+ );
+ });
+ })()}
+ </div>
+
+ </div>
+ )}
+
+        {/* Browser Push section removed â€” notifications fully disabled */}
+
+ {/* ==================== TMDB FETCH ==================== */}
+ {activeSection === "tmdb-fetch" && (
+ <div>
+ <div className={`${glassCard} p-4 mb-4`}>
+ <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+ <CloudDownload size={14} className="text-indigo-400" /> Quick TMDB Fetch by ID
+ </h3>
+ <div className="flex gap-2 mb-3">
+ <button onClick={() => setFetchType("movie")} className={`flex-shrink-0 px-4 py-2 rounded-lg text-[13px] font-medium transition-colors ${fetchType === "movie" ? "bg-indigo-600 text-white" : "bg-[#141422] border border-white/8 text-zinc-400"}`}>
+ Movie
+ </button>
+ <button onClick={() => setFetchType("tv")} className={`flex-shrink-0 px-4 py-2 rounded-lg text-[13px] font-medium transition-colors ${fetchType === "tv" ? "bg-indigo-600 text-white" : "bg-[#141422] border border-white/8 text-zinc-400"}`}>
+ TV Series
+ </button>
+ </div>
+ <div className="flex gap-2.5">
+ <input value={quickTmdbId} onChange={e => setQuickTmdbId(e.target.value)} onKeyDown={e => e.key === "Enter" && quickFetch()}
+ className={`${inputClass} flex-1`} placeholder="Enter TMDB ID" />
+ <button onClick={quickFetch} className={`${btnPrimary} px-4 py-3.5`}><Download size={16} /></button>
+ </div>
+ </div>
+ </div>
+ )}
+
+ {/* ==================== AUTO IMPORT ==================== */}
+ {activeSection === "auto-import" && (
+ <AutoImportSection
+ glassCard={glassCard}
+ inputClass={inputClass}
+ btnPrimary={btnPrimary}
+ btnSecondary={btnSecondary}
+ categoryList={categoryList}
+ languageOptions={languageOptions}
+ webseriesData={webseriesData}
+ moviesData={moviesData}
+ selectClass={selectClass}
+ />
+ )}
+
+ {activeSection === "animesalt-manager" && (
+  <Suspense fallback={<AdminSectionLoader label="Loading AN Managerâ€¦" />}>
+ <AnManager
+ glassCard={glassCard}
+ inputClass={inputClass}
+ btnPrimary={btnPrimary}
+ btnSecondary={btnSecondary}
+ categoryList={categoryList}
+ selectClass={selectClass}
+ />
+  </Suspense>
+ )}
+
+ {/* ==================== ADD CONTENT ==================== */}
+ {activeSection === "add-content" && (
+ <div>
+ <div className={`${glassCard} p-6 mb-4`}>
+ <h3 className="text-base font-semibold text-center mb-6">What would you like to add?</h3>
+ <div className="flex flex-col gap-3">
+ {[
+ { icon: <Film size={20} />, label: "Web Series", desc: "Add TV shows with seasons & episodes", action: () => { showSection("webseries"); setSeriesTab("ws-add"); } },
+ { icon: <Video size={20} />, label: "Movie", desc: "Add movies with streaming links", action: () => { showSection("movies"); setMoviesTab("mv-add"); } },
+ { icon: <FolderOpen size={20} />, label: "Category", desc: "Manage content categories", action: () => showSection("categories") },
+ ].map((item, i) => (
+ <button key={i} onClick={item.action} className={`${btnSecondary} p-5 rounded-[14px] flex items-center gap-4 text-left`}>
+ <div className="w-[50px] h-[50px] bg-purple-500/20 rounded-xl flex items-center justify-center text-purple-500">{item.icon}</div>
+ <div>
+ <div className="text-[15px] font-semibold">{item.label}</div>
+ <div className="text-[11px] text-[#D1C4E9]">{item.desc}</div>
+ </div>
+ </button>
+ ))}
+ </div>
+ </div>
+ </div>
+ )}
+
+ {/* ==================== REDEEM CODES ==================== */}
+ {activeSection === "redeem-codes" && (
+ <div>
+ {/* Generate Redeem Code */}
+ <div className={`${glassCard} p-4 mb-4`}>
+ <h3 className="text-sm font-semibold mb-3.5 flex items-center gap-2">
+ <Shield size={14} className="text-purple-500" /> Generate Redeem Code
+ </h3>
+ <div className="space-y-3">
+ <div>
+ <label className="text-[11px] text-[#D1C4E9] mb-1 block">Duration (Days)</label>
+ <input value={newCodeDays} onChange={e => setNewCodeDays(e.target.value)} className={inputClass} placeholder="30" type="number" />
+ </div>
+ <div>
+ <label className="text-[11px] text-[#D1C4E9] mb-1 block">Note (Optional)</label>
+ <input value={newCodeNote} onChange={e => setNewCodeNote(e.target.value)} className={inputClass} placeholder="e.g. For user XYZ" />
+ </div>
+ <button onClick={() => {
+ const days = parseInt(newCodeDays) || 30;
+ const code = ""+"" + Math.random().toString(36).substring(2, 8).toUpperCase() + "-" + Math.random().toString(36).substring(2, 6).toUpperCase();
+ const codeData = {
+ code,
+ days,
+ note: newCodeNote,
+ used: false,
+ usedBy: null,
+ createdAt: Date.now(),
+ };
+ set(push(ref(db, "redeemCodes")), codeData)
+ .then(() => { toast.success(`Code generated: ${code}`); setNewCodeNote(""); })
+ .catch(err => toast.error("Error: " + err.message));
+ }} className={`${btnPrimary} w-full py-3.5 flex items-center justify-center gap-2`}>
+ <PlusCircle size={16} /> Generate Code
+ </button>
+ </div>
+ </div>
+
+ {/* ===== Random Prize Link Generator ===== */}
+ <RandomPrizeLinkGenerator glassCard={glassCard} inputClass={inputClass} btnPrimary={btnPrimary} />
+
+ {/* All Codes */}
+ <div className={`${glassCard} p-4`}>
+ <h3 className="text-sm font-semibold mb-3.5">All Codes ({redeemCodesData.length})</h3>
+ <div className="space-y-2.5">
+ {redeemCodesData.length === 0 && <p className="text-center text-[#957DAD] text-sm py-6">No redeem codes yet</p>}
+ {redeemCodesData.sort((a, b) => b.createdAt - a.createdAt).map(code => (
+ <div key={code.id} className={`p-3 rounded-xl border transition-all ${code.used ? "bg-red-500/10 border-red-500/30" : "bg-green-500/10 border-green-500/30"}`}>
+ <div className="flex justify-between items-start mb-1.5">
+ <span className="text-sm font-mono font-bold tracking-wider">{code.code}</span>
+ <div className="flex gap-1.5">
+ <button onClick={() => { navigator.clipboard.writeText(code.code); toast.success("Copied!"); }}
+ className="text-[10px] bg-purple-500/20 px-2 py-1 rounded-full hover:bg-purple-500/40 transition-all">Copy</button>
+ <button onClick={() => { if (confirm("Delete this code?")) remove(ref(db, `redeemCodes/${code.id}`)).then(() => toast.success("Deleted")); }}
+ className="text-[10px] bg-red-500/20 px-2 py-1 rounded-full hover:bg-red-500/40 transition-all text-red-400">
+ <Trash2 size={10} />
+ </button>
+ </div>
+ </div>
+ <div className="text-[10px] text-[#D1C4E9] space-y-0.5">
+ <p>{code.days} days â€¢ {code.used ? `Used by ${code.usedBy}` : "Available"}</p>
+ {code.note && <p>Note: {code.note}</p>}
+ <p>{formatTime(code.createdAt)}</p>
+ </div>
+ </div>
+ ))}
+ </div>
+ </div>
+ </div>
+ )}
+
+ {/* ==================== BKASH PAYMENTS ==================== */}
+ {activeSection === "bkash-payments" && (
+ <div>
+ {/* Settings Card */}
+ <div className={`${glassCard} p-4 mb-4`}>
+ <h3 className="text-sm font-semibold mb-3.5 flex items-center gap-2">
+ <Settings size={14} className="text-pink-500" /> bKash settings
+ </h3>
+ <div className="space-y-3">
+ <div>
+ <label className="text-[11px] text-zinc-400 mb-1 block">bKash nameà§</label>
+ <input value={bkashSettings.phoneNumber || ""} onChange={e => setBkashSettings((p: any) => ({ ...p, phoneNumber: e.target.value }))} className={inputClass} placeholder="01XXXXXXXXX" />
+ </div>
+ <div>
+ <label className="text-[11px] text-zinc-400 mb-1 block">account type</label>
+ <select value={bkashSettings.accountType || "Agent"} onChange={e => setBkashSettings((p: any) => ({ ...p, accountType: e.target.value }))} className={selectClass}>
+ <option value="Agent">Agent</option>
+ <option value="Personal">Personal</option>
+ <option value="Merchant">Merchant</option>
+ </select>
+ </div>
+ <div>
+ <label className="text-[11px] text-zinc-400 mb-1 block">QR code link (imageà¦° URL)</label>
+ <input value={bkashSettings.qrCodeLink || ""} onChange={e => setBkashSettings((p: any) => ({ ...p, qrCodeLink: e.target.value }))} className={inputClass} placeholder="https://example.com/qr.png" />
+ </div>
+ <div>
+ <label className="text-[11px] text-zinc-400 mb-1 block">à¦¨à¦¿à¦°à§à¦¶No (userà¦¦ for users)</label>
+ <textarea value={bkashSettings.instructions || ""} onChange={e => setBkashSettings((p: any) => ({ ...p, instructions: e.target.value }))} className={inputClass + " min-h-[80px] resize-none"} placeholder="Send Money ..." />
+ </div>
+
+ {/* Plans */}
+ <div>
+ <label className="text-[11px] text-zinc-400 mb-2 block font-semibold">subscription plan (3)</label>
+ {(bkashSettings.plans || []).map((plan: any, idx: number) => (
+ <div key={plan.id || idx} className="bg-[#141422] rounded-lg p-3 mb-2 border border-white/6">
+ <div className="grid grid-cols-2 gap-2 mb-2">
+ <div>
+ <label className="text-[10px] text-zinc-500 block">plan name</label>
+ <input value={plan.name} onChange={e => {
+ const plans = [...(bkashSettings.plans || [])];
+ plans[idx] = { ...plans[idx], name: e.target.value };
+ setBkashSettings((p: any) => ({ ...p, plans }));
+ }} className={inputClass + " !py-1.5 !text-xs"} />
+ </div>
+ <div>
+ <label className="text-[10px] text-zinc-500 block">price (à§³)</label>
+ <input type="number" value={plan.price} onChange={e => {
+ const plans = [...(bkashSettings.plans || [])];
+ plans[idx] = { ...plans[idx], price: Number(e.target.value) };
+ setBkashSettings((p: any) => ({ ...p, plans }));
+ }} className={inputClass + " !py-1.5 !text-xs"} />
+ </div>
+ </div>
+ <div className="grid grid-cols-3 gap-2">
+ <div>
+ <label className="text-[10px] text-zinc-500 block">day</label>
+ <input type="number" value={plan.days} onChange={e => {
+ const plans = [...(bkashSettings.plans || [])];
+ plans[idx] = { ...plans[idx], days: Number(e.target.value) };
+ setBkashSettings((p: any) => ({ ...p, plans }));
+ }} className={inputClass + " !py-1.5 !text-xs"} />
+ </div>
+ <div>
+ <label className="text-[10px] text-zinc-500 block">device</label>
+ <input type="number" value={plan.maxDevices || 1} onChange={e => {
+ const plans = [...(bkashSettings.plans || [])];
+ plans[idx] = { ...plans[idx], maxDevices: Number(e.target.value) || 1 };
+ setBkashSettings((p: any) => ({ ...p, plans }));
+ }} className={inputClass + " !py-1.5 !text-xs"} min="1" max="10" />
+ </div>
+ <div className="flex items-end">
+ <label className="flex items-center gap-2 cursor-pointer text-xs">
+ <input type="checkbox" checked={plan.active !== false} onChange={e => {
+ const plans = [...(bkashSettings.plans || [])];
+ plans[idx] = { ...plans[idx], active: e.target.checked };
+ setBkashSettings((p: any) => ({ ...p, plans }));
+ }} className="accent-indigo-500" />
+ active
+ </label>
+ </div>
+ </div>
+ </div>
+ ))}
+ </div>
+
+ <button onClick={() => {
+ set(ref(db, "bkashSettings"), bkashSettings)
+ .then(() => toast.success("bKash settings save done"))
+ .catch(err => toast.error("Error: " + err.message));
+ }} className={`${btnPrimary} w-full py-3.5 flex items-center justify-center gap-2`}>
+ <Save size={16} /> settings save 
+ </button>
+ </div>
+ </div>
+
+ {/* Payment Requests */}
+ <div className={`${glassCard} p-4`}>
+ <h3 className="text-sm font-semibold mb-3.5 flex items-center gap-2">
+ <List size={14} className="text-green-500" /> payment request ({bkashPaymentRequests.filter((r: any) => r.status === "pending").length} pending)
+ </h3>
+ <div className="space-y-2.5">
+ {bkashPaymentRequests.length === 0 && <p className="text-center text-zinc-500 text-sm py-6">any payment request none</p>}
+ {bkashPaymentRequests.map((req: any) => (
+ <div key={req.id} className={`p-3 rounded-xl border transition-colors ${
+ req.status === "approved" ? "bg-green-500/10 border-green-500/30" :
+ req.status === "rejected" ? "bg-red-500/10 border-red-500/30" :
+ "bg-yellow-500/10 border-yellow-500/30"
+ }`}>
+ <div className="flex justify-between items-start mb-1.5">
+ <div>
+ <p className="text-sm font-semibold">{req.userName || "Unknown User"}</p>
+ <p className="text-[10px] text-zinc-400">{req.userEmail || req.userId}</p>
+ </div>
+ <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${
+ req.status === "approved" ? "bg-green-500/20 text-green-400" :
+ req.status === "rejected" ? "bg-red-500/20 text-red-400" :
+ "bg-yellow-500/20 text-yellow-400"
+ }`}>{req.status === "approved" ? "âœ… Approved" : req.status === "rejected" ? "âŒ Rejected" : "â³ Pending"}</span>
+ </div>
+ <div className="text-[11px] text-zinc-400 space-y-0.5 mb-2">
+ <p>ğŸ“± TrxID: <span className="font-mono font-bold text-white">{req.transactionId}</span></p>
+ <p>ğŸ’° plan: {req.planName} â€” à§³{req.planPrice}</p>
+ <p>ğŸ“… {new Date(req.submittedAt).toLocaleString("bn-BD")}</p>
+ {req.bkashNumber && <p>ğŸ“ bKash: {req.bkashNumber}</p>}
+ </div>
+ {req.status === "pending" && (
+ <div className="flex gap-2">
+ <button onClick={async () => {
+ const days = req.planDays || 30;
+ const maxDevices = (() => {
+ const plan = (bkashSettings.plans || []).find((p: any) => p.id === req.planId);
+ return plan?.maxDevices || (days <= 30 ? 1 : days <= 90 ? 3 : 4);
+ })();
+ const premiumSnap = await get(ref(db, `users/${req.userId}/premium`));
+ const currentPremium = premiumSnap.val() || {};
+ const baseExpiry = currentPremium?.active && currentPremium?.expiresAt > Date.now() ? currentPremium.expiresAt : Date.now();
+ const expiresAt = baseExpiry + days * 24 * 60 * 60 * 1000;
+ await set(ref(db, `users/${req.userId}/premium`), {
+ ...currentPremium,
+ active: true,
+ expiresAt,
+ redeemedAt: Date.now(),
+ method: "bkash",
+ transactionId: req.transactionId,
+ maxDevices,
+ devices: currentPremium?.devices || {},
+ });
+ await update(ref(db, `bkashPayments/${req.id}`), { status: "approved", approvedAt: Date.now() });
+ toast.success(`${req.userName} of premium à¦…à§à¦¯à¦¾à¦•à§à¦­à§‡à¦Ÿ done (${days} day)`);
+ }} className="flex-1 py-2 rounded-lg bg-green-600 hover:bg-green-500 text-white text-xs font-semibold flex items-center justify-center gap-1 transition-colors">
+ <Check size={12} /> Approve
+ </button>
+ <button onClick={async () => {
+ await update(ref(db, `bkashPayments/${req.id}`), { status: "rejected", rejectedAt: Date.now() });
+ toast.success("request reject done");
+ }} className="flex-1 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white text-xs font-semibold flex items-center justify-center gap-1 transition-colors">
+ <X size={12} /> Reject
+ </button>
+ </div>
+ )}
+ </div>
+ ))}
+ </div>
+ </div>
+
+ {/* ==================== LIVE SMS FEED (Auto Payment) ==================== */}
+ <div className={`${glassCard} p-4 mt-4`}>
+ <div className="flex items-center justify-between mb-3.5">
+ <h3 className="text-sm font-semibold flex items-center gap-2">
+ <span className="relative flex h-2.5 w-2.5">
+ <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+ <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500"></span>
+ </span>
+ Live SMS Feed (Auto-Match)
+ </h3>
+ <button
+ onClick={async () => {
+ const { pruneOldSmsEntries } = await import("@/lib/bkashAutoMatcher");
+ const n = await pruneOldSmsEntries(30);
+ toast.success(`Pruned ${n} old SMS entries`);
+ }}
+ className="text-[10px] px-2 py-1 rounded-md bg-white/10 hover:bg-white/20"
+ >
+ ğŸ§¹ Prune (30d+)
+ </button>
+ </div>
+ <p className="text-[11px] text-zinc-400 mb-3">
+ Android SMS-forwarder app from incoming SMS à¦–à¦¾à¦¨à§‡ showsà¥¤ User TrxID submit à¦•à¦°à¦²à§‡this auto-match will beà¥¤
+ Total: <span className="text-white font-semibold">{bkashSmsFeed.length}</span> Â·
+ Consumed: <span className="text-green-400 font-semibold">{bkashSmsFeed.filter((s:any)=>s.consumed).length}</span> Â·
+ Unmatched: <span className="text-yellow-400 font-semibold">{bkashSmsFeed.filter((s:any)=>!s.consumed).length}</span>
+ </p>
+ <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
+ {bkashSmsFeed.length === 0 && (
+ <div className="text-center py-8 text-zinc-500 text-xs">
+ <p>ğŸ“­ any SMS à¦–à¦¨à§‹ forward not doneà¥¤</p>
+ <p className="mt-1 text-[10px]">Android app phones â€” install and enable Auto Add Money Serviceà¥¤</p>
+ </div>
+ )}
+ {bkashSmsFeed.slice(0, 50).map((sms: any) => {
+ const typeMap: Record<string, { label: string; color: string }> = {
+ B: { label: "bKash", color: "bg-pink-500/20 text-pink-300 border-pink-500/40" },
+ N: { label: "Nagad", color: "bg-orange-500/20 text-orange-300 border-orange-500/40" },
+ R: { label: "Rocket", color: "bg-purple-500/20 text-purple-300 border-purple-500/40" },
+ };
+ const t = typeMap[sms.type] || { label: sms.type || "Unknown", color: "bg-zinc-500/20 text-zinc-300 border-zinc-500/40" };
+ return (
+ <div key={sms.txid} className={`p-2.5 rounded-lg border text-[11px] ${
+ sms.consumed ? "bg-green-500/5 border-green-500/20 opacity-70" : "bg-white/5 border-white/10"
+ }`}>
+ <div className="flex items-center gap-2 mb-1.5">
+ <span className={`px-1.5 py-0.5 rounded border text-[9px] font-bold ${t.color}`}>{t.label}</span>
+ <span className="font-mono font-bold text-white">{sms.txid}</span>
+ <span className="ml-auto font-bold text-green-400">à§³{sms.amount}</span>
+ </div>
+ <div className="flex items-center justify-between text-zinc-400">
+ <span>ğŸ“ {sms.agent || "â€”"}</span>
+ {sms.consumed ? (
+ <span className="text-green-400">âœ… Matched</span>
+ ) : (
+ <span className="text-yellow-400">â³ Awaiting user submit</span>
+ )}
+ </div>
+ </div>
+ );
+ })}
+ </div>
+ </div>
+ </div>
+ )}
+
+ {activeSection === "premium-users" && (
+ <PremiumUsersManager glassCard={glassCard} inputClass={inputClass} btnPrimary={btnPrimary} btnSecondary={btnSecondary} />
+ )}
+
+ {/* ==================== DEVICE LIMITS ==================== */}
+ {activeSection === "device-limits" && (
+ <DeviceLimitsSection glassCard={glassCard} inputClass={inputClass} btnPrimary={btnPrimary} btnSecondary={btnSecondary} usersData={usersData} formatTime={formatTime} />
+ )}
+
+ {/* ==================== TELEGRAM POST ==================== */}
+ {activeSection === "telegram-post" && (
+ <div className="telegram-workspace flex flex-col gap-4 pb-52 scroll-mb-52">
+ <div className={`${glassCard} telegram-compose relative z-[80] order-1 overflow-visible p-4`}>
+ <h3 className="text-sm font-semibold mb-3.5 flex items-center gap-2">
+ <Send size={14} /> Telegram Publishing Workspace
+ </h3>
+ <p className="text-[11px] text-zinc-400 mb-4">
+ Select content, review every field, then publish when the live preview is ready.
+ </p>
+
+ {/* Content kind switch */}
+ <div className="mb-4">
+ <label className="block text-xs text-zinc-400 mb-1.5 font-medium">Post format</label>
+ <div className="flex gap-2">
+ {(["series", "movie"] as const).map(kind => (
+ <button key={kind} type="button" onClick={() => setTgContentKind(kind)}
+ className={`flex-1 py-2.5 rounded-lg text-[12px] font-semibold border transition-all ${tgContentKind === kind ? (kind === "movie" ? "bg-pink-600 border-pink-500 text-white" : "bg-blue-600 border-blue-500 text-white") : "bg-[#141422] border-white/8 text-zinc-400"}`}>
+ {kind === "series" ? "ğŸ“º Series" : "ğŸ¬ Movie"}
+ </button>
+ ))}
+ </div>
+ </div>
+
+ {tgContentKind === "movie" && (
+ <div className="mb-4">
+ <label className="block text-xs text-zinc-400 mb-1.5 font-medium">Movie type</label>
+ <div className="grid grid-cols-3 gap-2 mb-2">
+ {["Full Movie", "Complete Movie", "Part 1"].map(t => (
+ <button key={t} type="button" onClick={() => setTgMovieType(t)}
+ className={`py-2 rounded-lg text-[11px] font-semibold border transition-all ${tgMovieType === t ? "bg-pink-600 border-pink-500 text-white" : "bg-[#141422] border-white/8 text-zinc-400"}`}>
+ {t}
+ </button>
+ ))}
+ </div>
+ <input value={tgMovieType} onChange={e => setTgMovieType(e.target.value)} className={inputClass} placeholder="Full Movie / Part 1-2 / Complete Movie" />
+ </div>
+ )}
+
+ <div className="mb-4" ref={tgDropdownRef}>
+ <label className="block text-xs text-zinc-400 mb-2 font-medium">Content source</label>
+
+ <div className="relative z-[130]">
+ <button type="button" onClick={() => setTgDropdownOpen(!tgDropdownOpen)}
+ className={`${selectClass} w-full text-left flex items-center gap-2`}>
+ {tgSelectedRelease ? (
+ <span className="truncate text-sm">{
+ webseriesData.find(s => s.id === tgSelectedRelease)?.title
+ || moviesData.find(m => m.id === tgSelectedRelease)?.title
+ || releasesData.find(r => r.id === tgSelectedRelease)?.title
+ || "Selected"
+ }</span>
+ ) : <span className="text-zinc-500">Select from library...</span>}
+ <ChevronDown size={14} className="ml-auto flex-shrink-0" />
+ </button>
+ {tgDropdownOpen && (() => {
+ // Merged list â€” ALL webseries + movies, sorted by latest update first
+ const merged = [
+ ...webseriesData.map((s: any) => ({ id: s.id, title: s.title, poster: s.poster, type: "webseries" as const, updatedAt: s.updatedAt || s.createdAt || 0 })),
+ ...moviesData.map((m: any) => ({ id: m.id, title: m.title, poster: m.poster, type: "movie" as const, updatedAt: m.updatedAt || m.createdAt || 0 })),
+ ].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+ const filtered = merged.filter(r => !tgContentSearch.trim() || (r.title || '').toLowerCase().includes(tgContentSearch.toLowerCase()));
+ return (
+ <div className="absolute z-[200] top-full left-0 right-0 mt-1 bg-[#16162A] border border-white/10 rounded-xl max-h-[320px] overflow-hidden flex flex-col">
+ <div className="p-2 border-b border-white/10 flex-shrink-0">
+ <input value={tgContentSearch} onChange={e => setTgContentSearch(e.target.value)}
+ className="w-full px-3 py-2 bg-[#141422] border border-white/10 rounded-lg text-white text-[12px] focus:border-blue-500 focus:outline-none placeholder:text-zinc-500"
+ placeholder="Search your library..." autoFocus onClick={e => e.stopPropagation()} />
+ </div>
+ <div className="overflow-y-auto max-h-[260px]">
+ {filtered.map(r => {
+ // Build a synthetic release object so existing fillTelegramFromRelease works.
+ // Always take the LATEST release entry for this content (range fix).
+ const matching = releasesData
+   .filter(rel => rel.contentId === r.id)
+   .sort((a: any, b: any) => (b.timestamp || 0) - (a.timestamp || 0))[0];
+ return (
+ <div key={`${r.type}_${r.id}`} className={`flex items-center gap-2.5 p-2 cursor-pointer hover:bg-blue-500/20 rounded-lg m-1 ${tgSelectedRelease === r.id ? "bg-blue-500/30" : ""}`}
+ onClick={async () => {
+ setTgContentKind(r.type === "movie" ? "movie" : "series");
+ if (matching) {
+
+ fillTelegramFromRelease(matching.id);
+ } else {
+ // Manual fill from webseries/movies data when no release entry exists
+ setTgSelectedRelease(r.id);
+ setTgTitle(r.title || "");
+ const fullData = r.type === "webseries"
+ ? webseriesData.find(s => s.id === r.id)
+ : moviesData.find(m => m.id === r.id);
+ if (fullData) {
+ const backdrop = (fullData as any).backdrop || (fullData as any).poster || "";
+ setTgPosterUrl(backdrop.replace('/original/', '/w1280/').replace('/w780/', '/w1280/'));
+ if ((fullData as any).rating) setTgRating(String((fullData as any).rating));
+  // Genres from TMDB only â€” never from local category.
+  if ((fullData as any).language) setTgLanguages(String((fullData as any).language).replace(/\s*\/\s*/g, ", ").replace(/\s*\|\s*/g, ", "));
+  setTgDubType((fullData as any).dubType === "fandub" ? "fandub" : "official");
+   const latestRelease = releasesData.find(rel => rel.contentId === r.id);
+   if (latestRelease?.episodeInfo?.type !== "movie" && latestRelease?.episodeInfo?.seasonNumber && latestRelease?.episodeInfo?.episodeNumber) {
+    const sIdx = Math.max(0, Number(latestRelease.episodeInfo.seasonNumber) - 1);
+    const eIdx = getEpisodeIndexForShare((fullData as any).seasons?.[sIdx], latestRelease.episodeInfo.episodeNumber, 0);
+    setTgButtonLink(buildEpisodeShareUrl(r.id, sIdx, eIdx));
+   } else {
+    setTgButtonLink(buildEpisodeShareUrl(r.id));
+   }
+  setTgSelectedAnimeId(String(r.id));
+  try {
+  const safeId = String(r.id).replace(/[^a-zA-Z0-9_-]/g, "_");
+  const savedSnap = await get(ref(db, `telegramPerAnimeButtons/${safeId}`));
+  const saved = savedSnap.val();
+  if (saved && typeof saved === "object") {
+   if (typeof saved.defaultButtonName === "string" && saved.defaultButtonName.trim()) setTgDefaultButtonName(normalizeTelegramButtonText(saved.defaultButtonName));
+   if (Array.isArray(saved.buttons)) setTgButtons(saved.buttons.map((b: any) => ({ name: normalizeTelegramButtonText(String(b?.name || "")), url: String(b?.url || "") })));
+  else setTgButtons([]);
+  } else { setTgButtons([]); }
+  } catch {}
+  if ((fullData as any).tmdbId) setTgImdbId(String((fullData as any).tmdbId));
+  try {
+  const { genres, rating } = await resolveTelegramGenresAndRating(String((fullData as any).tmdbId || ""), r.title || "", (fullData as any).category || "");
+  if (genres.length > 0) setTgGenres(genres.join(", "));
+  if (rating) setTgRating(rating);
+  } catch {}
+ }
+ }
+ setTgDropdownOpen(false); setTgContentSearch('');
+ }}>
+ <CachedImg src={r.poster} alt="" className="w-8 h-11 rounded object-cover flex-shrink-0 bg-[#1E1E32]" loading="lazy" decoding="async" />
+ <div className="flex-1 min-w-0">
+ <span className="text-sm truncate block">{r.title}</span>
+ <span className="text-[9px] text-zinc-500">{r.type === "webseries" ? "ğŸ“º Series" : "ğŸ¬ Movie"}{matching ? " â€¢ ğŸ†• New EP" : ""}</span>
+ </div>
+ </div>
+ );
+ })}
+ {filtered.length === 0 && <p className="text-zinc-500 text-[11px] text-center py-4">No anime found</p>}
+ </div>
+ </div>
+ );
+ })()}
+ </div>
+ </div>
+ <div className="space-y-3">
+ <div>
+ <label className="block text-xs text-zinc-400 mb-1.5">Destination channels</label>
+ <textarea value={tgChannelId} onChange={e => setTgChannelId(e.target.value)} onBlur={e => { try { set(ref(db, "admin/telegramChannel"), e.target.value.trim()); } catch {} }} className={`${inputClass} min-h-[60px] resize-y`} placeholder={`${TELEGRAM_CHANNEL}, @channel2, -1001234567890`} rows={2} />
+ </div>
+ <div>
+ <label className="block text-xs text-zinc-400 mb-1.5">Title *</label>
+ <input value={tgTitle} onChange={e => setTgTitle(e.target.value)} className={inputClass} placeholder="Anime Title" />
+ </div>
+ {/* IMDB/TMDB ID for auto genres */}
+ <div>
+ <label className="block text-xs text-zinc-400 mb-1.5">TMDB / IMDb ID</label>
+ <div className="flex gap-2">
+ <input value={tgImdbId} onChange={e => setTgImdbId(e.target.value)} className={`${inputClass} flex-1`} placeholder="tt12345678 or 12345" />
+ <button type="button" onClick={() => fetchTmdbGenres(tgImdbId)} disabled={tgImdbLoading || !tgImdbId.trim()}
+ className={`${btnPrimary} !px-3 !py-2 !text-[11px] disabled:opacity-50`}>
+ {tgImdbLoading ? <RefreshCw size={12} className="animate-spin" /> : "Fetch"}
+ </button>
+ </div>
+ </div>
+ <div className="grid grid-cols-2 gap-3">
+ <div>
+ <label className="block text-xs text-zinc-400 mb-1.5">Season</label>
+ <input value={tgSeason} onChange={e => setTgSeason(e.target.value)} className={inputClass} placeholder="Season 01" />
+ </div>
+ <div>
+ <label className="block text-xs text-zinc-400 mb-1.5">Total episodes</label>
+ <input value={tgTotalEpisodes} onChange={e => setTgTotalEpisodes(e.target.value)} className={inputClass} placeholder="12" />
+ </div>
+ </div>
+ <div className="grid grid-cols-2 gap-3">
+ <div>
+ <label className="block text-xs text-zinc-400 mb-1.5">Quality</label>
+ <input value={tgQuality} onChange={e => setTgQuality(e.target.value)} className={inputClass} placeholder="480p,720p,1080p,4K" />
+ </div>
+ <div>
+ <label className="block text-xs text-zinc-400 mb-1.5">Rating â­</label>
+ <input value={tgRating} onChange={e => setTgRating(e.target.value)} className={inputClass} placeholder="8.5" />
+ </div>
+ </div>
+ <div>
+ <label className="block text-xs text-zinc-400 mb-1.5">Genres</label>
+ <input value={tgGenres} onChange={e => setTgGenres(e.target.value)} className={inputClass} placeholder="Animation, Action & Adventure" />
+ </div>
+ <div>
+ <label className="block text-xs text-zinc-400 mb-1.5">Audio languages</label>
+ <input value={tgLanguages} onChange={e => setTgLanguages(e.target.value)} className={inputClass} placeholder="Bengali,English,Hindi,Japanese" />
+ </div>
+ <div className="grid grid-cols-2 gap-3">
+ <div>
+ <label className="block text-xs text-zinc-400 mb-1.5">Release season</label>
+ <input value={tgSeason} onChange={e => setTgSeason(e.target.value)} className={inputClass} placeholder="01" />
+ </div>
+ <div>
+ <label className="block text-xs text-zinc-400 mb-1.5">New episode or range</label>
+ <input value={tgNewEpAdded} onChange={e => setTgNewEpAdded(e.target.value)} className={inputClass} placeholder="03 or 01-12" />
+ </div>
+ </div>
+ <div>
+ <label className="block text-xs text-zinc-400 mb-1.5">Dub type</label>
+ <div className="flex gap-2">
+ <button type="button" onClick={() => setTgDubType("official")}
+ className={`flex-1 py-2.5 rounded-lg text-[12px] font-semibold border transition-all ${tgDubType === "official" ? "bg-indigo-600 border-indigo-500 text-white" : "bg-[#141422] border-white/8 text-zinc-400"}`}>
+ {TG_DUB_TAGS.official}
+ </button>
+ <button type="button" onClick={() => setTgDubType("fandub")}
+ className={`flex-1 py-2.5 rounded-lg text-[12px] font-semibold border transition-all ${tgDubType === "fandub" ? "bg-orange-600 border-orange-500 text-white" : "bg-[#141422] border-white/8 text-zinc-400"}`}>
+ {TG_DUB_TAGS.fandub}
+ </button>
+ </div>
+ </div>
+ <div>
+ <div className="flex items-center justify-between mb-1.5">
+ <label className="block text-xs text-zinc-400">Release status</label>
+ <label className="flex items-center gap-1.5 text-[10px] text-zinc-500 cursor-pointer">
+ <input type="checkbox" checked={tgStatusAuto} onChange={e => setTgStatusAuto(e.target.checked)} className="accent-emerald-500" />
+ Auto (IMDb match)
+ </label>
+ </div>
+ <div className="flex gap-2">
+ <button type="button" onClick={() => { setTgStatusAuto(false); setTgStatus("ongoing"); }}
+ className={`flex-1 py-2.5 rounded-lg text-[12px] font-semibold border transition-all ${tgStatus === "ongoing" ? "bg-emerald-600 border-emerald-500 text-white" : "bg-[#141422] border-white/8 text-zinc-400"}`}>
+ ğŸŸ¢ OÉ´É¢á´ÉªÉ´É¢
+ </button>
+ <button type="button" onClick={() => { setTgStatusAuto(false); setTgStatus("complete"); }}
+ className={`flex-1 py-2.5 rounded-lg text-[12px] font-semibold border transition-all ${tgStatus === "complete" ? "bg-blue-600 border-blue-500 text-white" : "bg-[#141422] border-white/8 text-zinc-400"}`}>
+ âœ… Cá´á´á´˜ÊŸá´‡á´›á´‡
+ </button>
+ </div>
+ {tgStatusAuto && (
+ <p className="text-[10px] text-zinc-500 mt-1.5">Auto: {tgNewEpAdded || "?"} / {tgTotalEpisodes || "?"} â†’ <span className={tgStatus === "complete" ? "text-blue-400" : "text-emerald-400"}>{tgStatus}</span></p>
+ )}
+ </div>
+ <div>
+ <label className="block text-xs text-zinc-400 mb-1.5">Hashtags</label>
+ <input value={tgHashtags} onChange={e => setTgHashtags(e.target.value)} onBlur={() => { try { const clean = normalizeTelegramBaseHashtags(tgHashtags); setTgHashtags(clean); set(ref(db, "admin/tgHashtags"), clean); } catch {} }} className={inputClass} placeholder={DEFAULT_TG_HASHTAGS} />
+ </div>
+ <div>
+ <label className="block text-xs text-zinc-400 mb-1.5">Poster URL (optional)</label>
+ <input value={tgPosterUrl} onChange={e => setTgPosterUrl(e.target.value)} className={inputClass} placeholder="https://image.tmdb.org/..." />
+ </div>
+ <div>
+ <label className="block text-xs text-zinc-400 mb-1.5">Watch / Download link (optional)</label>
+ <input value={tgButtonLink} onChange={e => setTgButtonLink(e.target.value)} className={inputClass} placeholder={SITE_URL} />
+ </div>
+ {tgButtonLink && (
+ <div>
+ <label className="block text-xs text-zinc-400 mb-1.5">Primary button label</label>
+ <input value={tgDefaultButtonName} onChange={e => setTgDefaultButtonName(e.target.value)} onBlur={() => setTgDefaultButtonName(normalizeTelegramButtonText(tgDefaultButtonName))} className={inputClass} placeholder={DEFAULT_TG_BUTTON_TEXT} />
+ </div>
+ )}
+ {/* Extra buttons */}
+ <div>
+ <div className="flex items-center justify-between mb-1.5">
+ <label className="block text-xs text-zinc-400 font-medium">Additional buttons</label>
+ <button type="button" onClick={() => setTgButtons([...tgButtons, { name: "", url: "" }])}
+ className="text-[11px] text-blue-400 hover:text-blue-300 flex items-center gap-1">
+ <Plus size={12} /> Add button
+ </button>
+ </div>
+ {tgButtons.map((btn, i) => (
+ <div key={i} className="flex gap-2 mb-2 items-start">
+ <div className="flex-1 space-y-1.5">
+ <input value={btn.name} onChange={e => { const nb = [...tgButtons]; nb[i].name = e.target.value; setTgButtons(nb); }} onBlur={() => { const nb = [...tgButtons]; nb[i].name = normalizeTelegramButtonText(nb[i].name); setTgButtons(nb); }}
+ className={inputClass} placeholder="Button label" />
+ <input value={btn.url} onChange={e => { const nb = [...tgButtons]; nb[i].url = e.target.value; setTgButtons(nb); }}
+ className={inputClass} placeholder="https://..." />
+ </div>
+ <button type="button" onClick={() => setTgButtons(tgButtons.filter((_, j) => j !== i))}
+ className="mt-2 text-red-400 hover:text-red-300 p-1.5"><Trash2 size={14} /></button>
+ </div>
+ ))}
+ </div>
+ </div>
+ </div>
+
+ {/* Footer Links Management */}
+ <div className={`${glassCard} telegram-settings order-4 p-4`}>
+ <div className="flex items-center justify-between mb-3">
+ <h3 className="text-sm font-semibold flex items-center gap-2">
+ <Link size={14} /> Footer Links
+ </h3>
+ <button type="button" onClick={() => {
+ const newLinks = [...tgFooterLinks, { label: "New Link", url: "https://t.me/", emoji: "ğŸ”°" }];
+ setTgFooterLinks(newLinks);
+ set(ref(db, "admin/tgFooterLinks"), newLinks);
+ }} className="text-[11px] text-blue-400 hover:text-blue-300 flex items-center gap-1">
+ <Plus size={12} /> Add link
+ </button>
+ </div>
+ <div className="space-y-2.5">
+ {tgFooterLinks.map((link, i) => (
+ <div key={i} className="bg-zinc-800/40 rounded-xl p-3 border border-zinc-700/30">
+ <div className="grid grid-cols-[40px_1fr] gap-2 mb-2">
+ <div>
+ <label className="block text-[9px] text-zinc-500 mb-1">Emoji</label>
+ <input value={link.emoji} onChange={e => {
+ const nl = [...tgFooterLinks]; nl[i].emoji = e.target.value; setTgFooterLinks(nl);
+ }} className={`${inputClass} !text-center`} />
+ </div>
+ <div>
+ <label className="block text-[9px] text-zinc-500 mb-1">Label</label>
+ <input value={link.label} onChange={e => {
+ const nl = [...tgFooterLinks]; nl[i].label = e.target.value; setTgFooterLinks(nl);
+ }} className={inputClass} placeholder="Link Label" />
+ </div>
+ </div>
+ <div className="flex gap-2">
+ <input value={link.url} onChange={e => {
+ const nl = [...tgFooterLinks]; nl[i].url = e.target.value; setTgFooterLinks(nl);
+ }} className={`${inputClass} flex-1`} placeholder="https://t.me/..." />
+ <button type="button" onClick={() => {
+ const nl = tgFooterLinks.filter((_, j) => j !== i);
+ setTgFooterLinks(nl);
+ set(ref(db, "admin/tgFooterLinks"), nl);
+ }} className="text-red-400 hover:text-red-300 p-1.5"><Trash2 size={14} /></button>
+ </div>
+ </div>
+ ))}
+ <button type="button" onClick={() => set(ref(db, "admin/tgFooterLinks"), tgFooterLinks)}
+ className={`${btnSecondary} w-full !py-2 !text-[11px] flex items-center justify-center gap-1.5`}>
+ <Save size={12} /> Save footer links
+ </button>
+ </div>
+ </div>
+
+ {/* ============= TEMPLATE EDITOR ============= */}
+ <div className={`${glassCard} telegram-settings order-5 p-4`}>
+ <div className="flex items-center justify-between mb-3">
+ <h3 className="text-sm font-semibold flex items-center gap-2">
+ <Edit size={14} className="text-amber-400" /> Template Editor
+ </h3>
+ <button type="button" onClick={saveTgTemplates} disabled={tgTemplateSaving}
+ className={`${btnPrimary} !px-3 !py-1.5 !text-[11px] disabled:opacity-50 flex items-center gap-1.5`}>
+ <Save size={12} /> {tgTemplateSaving ? "Savingâ€¦" : "Save Templates"}
+ </button>
+ </div>
+ <p className="text-[11px] text-zinc-400 mb-3">
+ Edit every line of the caption. Tokens are replaced automatically when the post is sent.
+ </p>
+
+ <div className="flex gap-2 mb-3">
+ {(["series", "movie"] as const).map(tab => (
+ <button key={tab} type="button" onClick={() => setTgTemplateTab(tab)}
+ className={`flex-1 py-2 rounded-lg text-[12px] font-semibold border transition-all ${tgTemplateTab === tab ? "bg-amber-600 border-amber-500 text-white" : "bg-[#141422] border-white/8 text-zinc-400"}`}>
+ {tab === "series" ? "ğŸ“º Series Template" : "ğŸ¬ Movie Template"}
+ </button>
+ ))}
+ </div>
+
+ <textarea
+ value={tgTemplateTab === "series" ? tgTemplateSeries : tgTemplateMovie}
+ onChange={e => tgTemplateTab === "series" ? setTgTemplateSeries(e.target.value) : setTgTemplateMovie(e.target.value)}
+ className={`${inputClass} min-h-[280px] font-mono !text-[11px] leading-relaxed resize-y`}
+ spellCheck={false}
+ />
+
+ <div className="flex flex-wrap gap-1.5 mt-2.5">
+ {TG_TEMPLATE_TOKENS.map(tok => (
+ <button key={tok} type="button"
+ onClick={() => {
+ if (tgTemplateTab === "series") setTgTemplateSeries(t => `${t}${t.endsWith("\n") ? "" : "\n"}${tok}`);
+ else setTgTemplateMovie(t => `${t}${t.endsWith("\n") ? "" : "\n"}${tok}`);
+ }}
+ className="px-2 py-1 rounded-md bg-white/5 border border-white/10 text-[10px] text-amber-300 hover:bg-amber-500/15">
+ {tok}
+ </button>
+ ))}
+ </div>
+
+ <div className="grid grid-cols-2 gap-3 mt-4">
+ <div>
+ <label className="block text-xs text-zinc-400 mb-1.5">Owner username (for {"{owner}"})</label>
+ <input value={tgOwnerUsername} onChange={e => setTgOwnerUsername(e.target.value)} className={inputClass} placeholder="your_username" />
+ </div>
+ <div className="flex items-end">
+ <button type="button"
+ onClick={() => {
+ if (!confirm("Reset this template to the default layout?")) return;
+ if (tgTemplateTab === "series") setTgTemplateSeries(DEFAULT_TG_TEMPLATE_SERIES);
+ else setTgTemplateMovie(DEFAULT_TG_TEMPLATE_MOVIE);
+ }}
+ className={`${btnSecondary} w-full !py-2 !text-[11px]`}>
+ â™»ï¸ Reset to default
+ </button>
+ </div>
+ </div>
+ </div>
+
+ {/* Preview */}
+ <div className={`${glassCard} telegram-preview order-2 p-4`}>
+ <h3 className="text-sm font-semibold mb-3.5 flex items-center gap-2">
+ <Eye size={14} className="text-green-400" /> Live Preview
+ <span className="ml-auto text-[10px] font-normal px-2 py-0.5 rounded-full bg-white/5 border border-white/10 text-zinc-400">
+ {tgContentKind === "movie" ? "ğŸ¬ Movie template" : "ğŸ“º Series template"}
+ </span>
+ </h3>
+ <div className="bg-[#0E1621] rounded-xl p-4 border border-white/5">
+ {tgPosterUrl && (
+ <CachedImg src={tgPosterUrl} alt="poster" className="w-full h-[200px] object-cover rounded-lg mb-3"
+ onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+ )}
+ <div className="font-mono text-[11px] text-zinc-300 whitespace-pre-line leading-relaxed">
+ {buildTelegramCaption("plain")}
+ </div>
+ {tgButtonLink && (
+ <div className="mt-3 bg-blue-500/20 border border-blue-500/40 rounded-lg py-2.5 text-center text-[12px] font-bold text-blue-300">
+ {normalizeTelegramButtonText(tgDefaultButtonName)}
+ </div>
+ )}
+ {tgButtons.filter(b => b.name.trim()).map((btn, i) => (
+ <div key={i} className="mt-1.5 bg-blue-500/15 border border-blue-500/30 rounded-lg py-2 text-center text-[11px] font-bold text-blue-300">
+ {btn.name}
+ </div>
+ ))}
+ </div>
+ </div>
+
+
+ <button onClick={sendTelegramPost} disabled={tgSending || !tgTitle.trim()}
+ className={`${btnPrimary} telegram-send order-3 w-full py-4 text-[15px] font-semibold flex items-center justify-center gap-2 disabled:opacity-50`}>
+  {tgSending ? (
+  <>
+  <div className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+  Sending...
+  </>
+  ) : (
+  <>
+  <Send size={18} /> Send Telegram Post
+  </>
+  )}
+ </button>
+
+ {/* ============= BULK CATALOG BROADCAST ============= */}
+ {(() => {
+ const totalPool = webseriesData.length + moviesData.length;
+ const sentCount = Object.keys(tgBulkSentIds).length;
+ const remaining = Math.max(0, totalPool - sentCount);
+ return (
+  <div className={`${glassCard} telegram-settings order-6 p-4`}>
+ <h3 className="text-sm font-semibold mb-2 flex items-center gap-2">
+ <Send size={14} className="text-purple-400" /> Bulk Catalog Broadcast
+ </h3>
+ <p className="text-[11px] text-zinc-400 mb-3">
+  Send a random, duplicate-safe batch from your catalog to the selected channels.
+ </p>
+
+ <div className="grid grid-cols-3 gap-2 mb-3">
+ <div className="bg-white/5 rounded-lg p-2 text-center">
+ <div className="text-[10px] text-zinc-400">Total</div>
+ <div className="text-base font-bold text-white">{totalPool}</div>
+ </div>
+ <div className="bg-green-500/10 rounded-lg p-2 text-center">
+ <div className="text-[10px] text-green-400">Sent</div>
+ <div className="text-base font-bold text-green-400">{sentCount}</div>
+ </div>
+ <div className="bg-purple-500/10 rounded-lg p-2 text-center">
+ <div className="text-[10px] text-purple-400">Remaining</div>
+ <div className="text-base font-bold text-purple-400">{remaining}</div>
+ </div>
+ </div>
+
+ <div className="grid grid-cols-2 gap-2 mb-3">
+ <div>
+ <label className="block text-[10px] text-zinc-400 mb-1">Batch size (1-50)</label>
+ <input type="number" min={1} max={50} value={tgBulkBatchSize}
+ onChange={e => setTgBulkBatchSize(Math.max(1, Math.min(50, parseInt(e.target.value) || 20)))}
+ className={inputClass} />
+ </div>
+ <div className="flex items-end">
+ <button onClick={resetBulkSentIds} type="button"
+ className="w-full py-2 px-3 text-[11px] rounded-lg bg-red-500/15 border border-red-500/30 text-red-400 hover:bg-red-500/25 transition">
+ ğŸ”„ Reset Sent History
+ </button>
+ </div>
+ </div>
+
+ <div className="mb-2">
+ <label className="block text-[10px] text-zinc-400 mb-1">Header (HTML allowed)</label>
+ <input value={tgBulkHeader} onChange={e => setTgBulkHeader(e.target.value)} className={inputClass} />
+ </div>
+ <div className="mb-3">
+ <label className="block text-[10px] text-zinc-400 mb-1">Footer</label>
+ <input value={tgBulkFooter} onChange={e => setTgBulkFooter(e.target.value)} className={inputClass} />
+ </div>
+
+ {tgBulkProgress && (
+ <div className="mb-3">
+ <div className="flex justify-between text-[10px] text-zinc-400 mb-1">
+ <span>Sendingâ€¦</span>
+ <span>{tgBulkProgress.done}/{tgBulkProgress.total}</span>
+ </div>
+ <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
+ <div className="h-full bg-purple-500 transition-all"
+ style={{ width: `${(tgBulkProgress.done / Math.max(1, tgBulkProgress.total)) * 100}%` }} />
+ </div>
+ </div>
+ )}
+
+ <button onClick={sendBulkCatalogPost} disabled={tgBulkSending || remaining === 0 || !tgChannelId.trim()}
+ className="w-full py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white disabled:opacity-50 hover:opacity-95 transition">
+ {tgBulkSending ? (
+ <>
+ <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+  Sending batch...
+ </>
+ ) : (
+ <>
+ <Send size={16} /> Send {Math.min(tgBulkBatchSize, remaining)} Random Anime
+ </>
+ )}
+ </button>
+ <p className="text-[10px] text-zinc-500 mt-2 text-center">
+  Uses the destination channels above. Every title is sent as a clickable link.
+ </p>
+ </div>
+ );
+ })()}
+ </div>
+ )}
+
+
+  {activeSection === "tg-url-changer" && (
+    <TgUrlChangerManager
+      glassCard={glassCard}
+      inputClass={inputClass}
+      selectClass={selectClass}
+      btnPrimary={btnPrimary}
+      btnSecondary={btnSecondary}
+      webseriesData={webseriesData}
+      moviesData={moviesData}
+      tgFooterLinks={tgFooterLinks}
+      tgHashtags={tgHashtags}
+      tgGenres={tgGenres}
+    />
+  )}
+
+
+
+ {activeSection === "free-access" && (
+ <div>
+ {/* Telegram Post Free Access (auto-attach to every TG post) */}
+ <TelegramFreeAccessConfig glassCard={glassCard} inputClass={inputClass} btnPrimary={btnPrimary} btnSecondary={btnSecondary} />
+
+ {/* Telegram Post â€” Global Permanent Custom Button */}
+ <TelegramGlobalButtonConfig glassCard={glassCard} inputClass={inputClass} btnPrimary={btnPrimary} btnSecondary={btnSecondary} />
+
+
+ {/* Global Free Access for All */}
+ <div className={`${glassCard} p-4 mb-4`}>
+ <h3 className="text-sm font-semibold mb-3.5 flex items-center gap-2">
+ <Zap size={14} className="text-yellow-500" /> Free Access for All Users
+ </h3>
+ <p className="text-[11px] text-[#D1C4E9] mb-4">
+ all user for a specific duration free access dayà¥¤ this time à¦®à¦§à§which any ad à¦—à§‡à¦Ÿ à¦¥à¦¾à¦•à¦¬à§‡ Noà¥¤
+ </p>
+
+ {/* Current status */}
+ {globalFreeAccess?.active && globalFreeAccess?.expiresAt > Date.now() ? (
+ <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-4 mb-4">
+ <div className="flex items-center justify-between mb-2">
+ <span className="text-sm font-semibold text-green-400 flex items-center gap-2">
+ <Zap size={14} /> global free access à¦…à§à¦¯à¦¾à¦•à§à¦­
+ </span>
+ <span className="text-xs bg-green-500/20 text-green-400 px-2 py-0.5 rounded-full">LIVE</span>
+ </div>
+ <div className="text-[11px] text-[#D1C4E9] space-y-1">
+ <p>start: {new Date(globalFreeAccess.activatedAt).toLocaleString("bn-BD", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</p>
+ <p>done: {new Date(globalFreeAccess.expiresAt).toLocaleString("bn-BD", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</p>
+ {(() => {
+ const rem = globalFreeAccess.expiresAt - Date.now();
+ const h = Math.floor(rem / 3600000);
+ const m = Math.floor((rem % 3600000) / 60000);
+ return <p className="text-green-400 font-semibold">remaining: {h}h {m}m</p>;
+ })()}
+ </div>
+ <button
+ onClick={() => {
+ if (confirm("global free access off Continue?")) {
+ set(ref(db, "globalFreeAccess"), { active: false, expiresAt: 0, activatedAt: 0 })
+ .then(() => toast.success("global free access off done"))
+ .catch((err) => toast.error("Error: " + err.message));
+ }
+ }}
+ className={`${btnSecondary} mt-3 w-full py-2.5 text-sm flex items-center justify-center gap-2 text-red-400 border-red-500/30 hover:border-red-500`}
+ >
+ <X size={14} /> free access off 
+ </button>
+ </div>
+ ) : (
+ <div className="space-y-3">
+ <div className="flex gap-2">
+ <div className="flex-1">
+ <label className="text-[11px] text-[#957DAD] mb-1 block">hours</label>
+ <input
+ type="number"
+ min="0"
+ max="720"
+ value={globalFreeHours}
+ onChange={(e) => setGlobalFreeHours(e.target.value)}
+ className={inputClass}
+ placeholder="2"
+ />
+ </div>
+ <div className="flex-1">
+ <label className="text-[11px] text-[#957DAD] mb-1 block">minute</label>
+ <input
+ type="number"
+ min="0"
+ max="59"
+ value={globalFreeMinutes}
+ onChange={(e) => setGlobalFreeMinutes(e.target.value)}
+ className={inputClass}
+ placeholder="0"
+ />
+ </div>
+ </div>
+ <button
+ onClick={() => {
+ const hours = parseInt(globalFreeHours) || 0;
+ const minutes = parseInt(globalFreeMinutes) || 0;
+ const totalMs = (hours * 3600000) + (minutes * 60000);
+ if (totalMs < 60000) {
+ toast.error("at least à¦ªà¦•à§à¦·à§‡ 1 minute time day");
+ return;
+ }
+ if (!confirm(`all user ${hours > 0 ? hours + " hours " : ""}${minutes > 0 ? minutes + " minute " : ""}free access Continue?`)) return;
+ const now = Date.now();
+ set(ref(db, "globalFreeAccess"), {
+ active: true,
+ activatedAt: now,
+ expiresAt: now + totalMs,
+ })
+ .then(() => toast.success("global free access on done!"))
+ .catch((err) => toast.error("Error: " + err.message));
+ }}
+ className={`${btnPrimary} w-full py-3 text-sm flex items-center justify-center gap-2`}
+ >
+ <Zap size={14} /> all user free access day
+ </button>
+ </div>
+ )}
+ </div>
+
+ <div className={`${glassCard} p-4 mb-4`}>
+ <div className="mb-3.5 flex items-center justify-between gap-3">
+ <h3 className="text-sm font-semibold flex items-center gap-2">
+ <Eye size={14} className="text-green-500" /> Active Free Access Users ({freeAccessUsers.length})
+ </h3>
+ <button
+ onClick={clearAllFreeAccess}
+ disabled={freeAccessBusy === "all" || freeAccessUsers.length === 0}
+ className={`${btnSecondary} !px-3 !py-1.5 text-[11px] text-red-400 border-red-500/30 hover:border-red-500 disabled:opacity-50`}
+ >
+ {freeAccessBusy === "all" ? "Clearing..." : "Clear All"}
+ </button>
+ </div>
+ <p className="text-[11px] text-[#D1C4E9] mb-4">
+ List of users who took free 24-hour access through the AroLinks ad gateà¥¤ access done if automatically à¦®à§à¦›à§‡ will goà¥¤
+ </p>
+ {freeAccessUsers.length === 0 ? (
+ <p className="text-[#957DAD] text-[13px] text-center py-8">any à¦…à§à¦¯à¦¾à¦•à§à¦­ free access user none</p>
+ ) : (
+ <div className="space-y-2.5">
+ {freeAccessUsers.map((user) => {
+ const remaining = user.expiresAt - Date.now();
+ const hours = Math.floor(remaining / 3600000);
+ const minutes = Math.floor((remaining % 3600000) / 60000);
+ return (
+ <div key={user.id} className={`bg-[#1A1A2E] border rounded-xl p-4 ${user.suspiciousBypass ? "border-red-500/50" : "border-green-500/20"}`}>
+ <div className="flex items-center gap-3">
+ <div className={`w-[42px] h-[42px] rounded-full flex items-center justify-center font-bold text-lg flex-shrink-0 ${user.suspiciousBypass ? "bg-gradient-to-br from-red-500 to-red-700" : "bg-gradient-to-br from-green-500 to-green-700"}`}>
+ {(user.name || "U")[0].toUpperCase()}
+ </div>
+ <div className="flex-1 min-w-0">
+ <div className="flex items-center gap-2">
+ <p className="text-sm font-semibold truncate">{user.name || "Unknown"}</p>
+ {user.suspiciousBypass ? <span className="inline-flex h-2.5 w-2.5 rounded-full bg-red-500" /> : null}
+ </div>
+ <p className="text-[11px] text-[#D1C4E9] truncate">{user.email || "No email"}</p>
+ </div>
+ <div className="flex items-center gap-2 flex-shrink-0">
+ <div className={`px-2.5 py-1 rounded-full border ${user.suspiciousBypass ? "bg-red-500/15 border-red-500/30" : "bg-green-500/15 border-green-500/30"}`}>
+ <span className={`text-[11px] font-bold ${user.suspiciousBypass ? "text-red-400" : "text-green-400"}`}>{hours}h {minutes}m</span>
+ </div>
+ <button
+ onClick={() => clearSingleFreeAccess(user)}
+ disabled={freeAccessBusy === String(user.userId || user.id || "")}
+ className="h-8 w-8 rounded-full border border-red-500/30 bg-red-500/10 text-red-400 flex items-center justify-center disabled:opacity-50"
+ title="Cancel access"
+ >
+ <X size={14} />
+ </button>
+ </div>
+ </div>
+ <div className="mt-2.5 flex justify-between items-center text-[10px] text-[#957DAD]">
+ <span>unlock: {new Date(user.unlockedAt).toLocaleString("bn-BD", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</span>
+ <span>done: {new Date(user.expiresAt).toLocaleString("bn-BD", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</span>
+ </div>
+ {user.suspiciousBypass ? (
+ <div className="mt-2 text-[10px] text-red-300">
+ âš ï¸ 30 second- of beforethis token à¦¨à§‡ done â€” bypass suspect
+ </div>
+ ) : null}
+ </div>
+ );
+ })}
+ </div>
+ )}
+ </div>
+
+ {/* Prize Pool - Users who claimed via prize links */}
+ <div className={`${glassCard} p-4`}>
+ <h3 className="text-sm font-semibold mb-3.5 flex items-center gap-2">
+ <Star size={14} className="text-yellow-400" /> ğŸ Prize Pool ({prizePoolUsers.length})
+ </h3>
+ <p className="text-[11px] text-muted-foreground mb-4">
+ List of users who got free access from a Random Prize linkà¥¤
+ </p>
+ {prizePoolUsers.length === 0 ? (
+ <p className="text-muted-foreground text-[13px] text-center py-8">any à¦ªà§à¦‡à¦œ claim not done</p>
+ ) : (
+ <div className="space-y-2.5">
+ {prizePoolUsers.map((user) => {
+ const isExpired = user.expiresAt < Date.now();
+ const isJackpot = user.hours >= 42;
+ return (
+ <div key={user.id} className={`p-3 rounded-xl border transition-all ${
+ isExpired ? "bg-muted/30 border-border opacity-60" 
+ : isJackpot ? "bg-yellow-500/10 border-yellow-500/30" 
+ : "bg-purple-500/10 border-purple-500/30"
+ }`}>
+ <div className="flex items-center gap-3">
+ <div className={`w-[38px] h-[38px] rounded-full flex items-center justify-center font-bold text-lg flex-shrink-0 ${
+ isJackpot ? "bg-gradient-to-br from-yellow-400 to-orange-500" : "bg-gradient-to-br from-purple-500 to-pink-500"
+ }`}>
+ {isJackpot ? "ğŸ†" : "ğŸ"}
+ </div>
+ <div className="flex-1 min-w-0">
+ <p className="text-sm font-semibold truncate">{user.name || "Unknown"}</p>
+ <p className="text-[10px] text-muted-foreground truncate">{user.email || "No email"}</p>
+ </div>
+ <div className="text-right flex-shrink-0">
+ <div className={`px-2.5 py-1 rounded-full text-[11px] font-bold ${
+ isExpired ? "bg-muted text-muted-foreground" 
+ : isJackpot ? "bg-yellow-500/20 text-yellow-400"
+ : "bg-purple-500/20 text-purple-400"
+ }`}>
+ {user.hours}h {user.minutes || 0}m
+ </div>
+ {isExpired && <span className="text-[9px] text-muted-foreground">expired</span>}
+ </div>
+ </div>
+ <div className="mt-2 text-[10px] text-muted-foreground">
+ claim: {new Date(user.claimedAt).toLocaleString("bn-BD", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+ </div>
+ </div>
+ );
+ })}
+ </div>
+ )}
+ </div>
+ </div>
+ )}
+
+ {/* ==================== UI THEMES ==================== */}
+ {activeSection === "ui-themes" && (
+ <UIThemesSection glassCard={glassCard} btnPrimary={btnPrimary} />
+ )}
+
+ {/* ==================== HERO PINNED POSTS ==================== */}
+ {activeSection === "hero-pinned" && (
+ <HeroPinnedPostsSection
+ glassCard={glassCard}
+ inputClass={inputClass}
+ btnPrimary={btnPrimary}
+ btnSecondary={btnSecondary}
+ webseriesData={webseriesData}
+ moviesData={moviesData}
+ animesaltSelectedData={animesaltSelectedData}
+ />
+ )}
+
+ {/* ==================== SETTINGS ==================== */}
+ {activeSection === "settings" && (
+ <div>
+ {/* Admin notification & FCM token settings removed â€” Telegram-only delivery */}
+
+ <div className={`${glassCard} p-4 mb-4`}>
+ <h3 className="text-sm font-semibold mb-3.5 flex items-center gap-2">
+ <Link size={14} className="text-purple-400" /> Tutorial Videos
+ </h3>
+ <p className="text-[11px] text-[#D1C4E9] mb-4">
+ Add multiple tutorial videos with custom titles. Users will see these in the unlock section.
+ </p>
+
+ {/* Existing videos list */}
+ {tutorialVideos.length > 0 && (
+ <div className="space-y-2 mb-4">
+ {tutorialVideos.map((vid: any, idx: number) => (
+ <div key={vid.id || idx} className="flex items-center gap-2 bg-[#0E1621] rounded-lg p-2 border border-white/5">
+ <div className="flex-1 min-w-0">
+ <p className="text-[11px] font-semibold text-white truncate">{vid.title || "Untitled"}</p>
+ <a href={vid.url} target="_blank" rel="noopener noreferrer" className="text-[9px] text-purple-400 underline truncate block">{vid.url}</a>
+ </div>
+ <button onClick={async () => {
+ try {
+ await remove(ref(db, `settings/tutorialVideos/${vid.id}`));
+ toast.success("Removed!");
+ } catch { toast.error("Failed"); }
+ }} className="text-red-400 hover:text-red-300 flex-shrink-0"><Trash2 size={12} /></button>
+ </div>
+ ))}
+ </div>
+ )}
+
+ {/* Add new video */}
+ <div className="space-y-2">
+ <input value={newTutorialTitle} onChange={e => setNewTutorialTitle(e.target.value)}
+ placeholder="Video Title (e.g. How to open ShrinkMe)"
+ className={inputClass} />
+ <div className="flex gap-2">
+ <input value={newTutorialUrl} onChange={e => setNewTutorialUrl(e.target.value)}
+ placeholder="Video URL (MP4)" className={`${inputClass} flex-1`} />
+ <button onClick={async () => {
+ if (!newTutorialTitle.trim() || !newTutorialUrl.trim()) { toast.error("Title & URL required"); return; }
+ try {
+ const newRef = push(ref(db, "settings/tutorialVideos"));
+ await set(newRef, { title: newTutorialTitle.trim(), url: newTutorialUrl.trim() });
+ setNewTutorialTitle(""); setNewTutorialUrl("");
+ toast.success("Tutorial video added!");
+ } catch { toast.error("Failed to save"); }
+ }} className={`${btnPrimary} !px-4`}>
+ <Plus size={14} /> Add
+ </button>
+ </div>
+ </div>
+
+ {/* Legacy single link */}
+ {tutorialLink && (
+ <div className="mt-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-2">
+ <p className="text-[10px] text-yellow-400 mb-1">Legacy single link (will be used if no videos above):</p>
+ <div className="flex items-center gap-2">
+ <a href={tutorialLink} target="_blank" rel="noopener noreferrer" className="text-[10px] text-purple-400 underline truncate flex-1">{tutorialLink}</a>
+ <button onClick={() => { set(ref(db, "settings/tutorialLink"), null); setTutorialLinkInput(""); toast.success("Removed!"); }}
+ className="text-red-400 hover:text-red-300"><Trash2 size={12} /></button>
+ </div>
+ </div>
+ )}
+ </div>
+
+ {/* Authorized Google Emails for Admin */}
+ <div className={`${glassCard} p-4 mb-4`}>
+ <h3 className="text-sm font-semibold mb-3.5 flex items-center gap-2">
+ <Shield size={14} className="text-green-500" /> admin Google account
+ </h3>
+ <p className="text-[11px] text-zinc-400 mb-4">
+ Add the Google emails allowed to log in to the admin panelà¥¤
+ </p>
+ <AdminAuthorizedEmails glassCard={glassCard} inputClass={inputClass} btnPrimary={btnPrimary} btnSecondary={btnSecondary} />
+ </div>
+
+ {/* Telegram Channel Settings */}
+ <div className={`${glassCard} p-4 mb-4`}>
+ <h3 className="text-sm font-semibold mb-3.5 flex items-center gap-2">
+ <Send size={14} className="text-blue-400" /> Telegram channel settings
+ </h3>
+ <div className="flex gap-2">
+ <input
+ value={tgChannelId}
+ onChange={(e) => setTgChannelId(e.target.value)}
+ placeholder={TELEGRAM_CHANNEL}
+ className={`${inputClass} flex-1`}
+ />
+ <button
+ onClick={async () => {
+ try {
+ await set(ref(db, "admin/telegramChannel"), tgChannelId.trim());
+ toast.success("channel save done!");
+ } catch { toast.error("Save failed"); }
+ }}
+ className={`${btnPrimary} !px-4`}
+ >
+ <Save size={14} /> Save
+ </button>
+ </div>
+ </div>
+
+ {/* Force notification re-prompt removed â€” FCM disabled site-wide */}
+
+
+  {/* Proxy Server Selector â€” REMOVED. Player proxy now comes only from
+     EGD Router â†’ video-proxy URL (settings/functionOverrides/video-proxy). */}
+
+ {/* Image Refresh from TMDB */}
+ <ImageRefreshSection
+ glassCard={glassCard}
+ btnPrimary={btnPrimary}
+ webseriesData={webseriesData}
+ moviesData={moviesData}
+ />
+
+ {/* Episode Name Refresh from TMDB */}
+ <EpisodeNameRefreshSection
+ glassCard={glassCard}
+ btnPrimary={btnPrimary}
+ webseriesData={webseriesData}
+ />
+
+ {/* Link Checker moved to dedicated section */}
+
+ {/* Anime Name Exporter (RS vs AN) */}
+ <AnimeNameExporter glassCard={glassCard} btnPrimary={btnPrimary} btnSecondary={btnSecondary} />
+
+  {/* Telegram Welcome Popup (first-visit modal) */}
+  <TelegramWelcomeManager glassCard={glassCard} inputClass={inputClass} btnPrimary={btnPrimary} btnSecondary={btnSecondary} />
+
+  {/* AN Series manager moved to Series â†’ AN Series tab */}
+ </div>
+ )}
+
+ {/* ==================== EDGE FUNCTION ROUTER ==================== */}
+ {activeSection === "edge-router" && (
+ <EdgeRouterSection glassCard={glassCard} inputClass={inputClass} btnPrimary={btnPrimary} btnSecondary={btnSecondary} />
+ )}
+
+ {/* ==================== EMAIL SERVICE ==================== */}
+ {activeSection === "email-service" && (
+ <EmailServiceSection glassCard={glassCard} inputClass={inputClass} btnPrimary={btnPrimary} btnSecondary={btnSecondary} />
+ )}
+
+
+ {/* ==================== APK DW (Download Center) ==================== */}
+ {activeSection === "apk-dw" && (
+ <ApkDownloadCenter glassCard={glassCard} inputClass={inputClass} btnPrimary={btnPrimary} />
+ )}
+
+ {/* ==================== EGD MANAGER ==================== */}
+ {activeSection === "egd-manager" && (
+ <EgdManager glassCard={glassCard} inputClass={inputClass} btnPrimary={btnPrimary} btnSecondary={btnSecondary} />
+ )}
+
+ {/* ==================== CLOUDFLARE MANAGER ==================== */}
+ {activeSection === "cf-manager" && (
+ <CloudflareManager glassCard={glassCard} inputClass={inputClass} btnPrimary={btnPrimary} btnSecondary={btnSecondary} />
+ )}
+
+
+ {/* ==================== ADSTERRA ADS ==================== */}
+ {activeSection === "adsterra" && (
+ <div className="space-y-5">
+   <AdsterraAnalytics />
+   <AdsterraConfig glassCard={glassCard} inputClass={inputClass} btnPrimary={btnPrimary} />
+ </div>
+ )}
+
+ {/* ==================== BACKDROP AI ==================== */}
+ {activeSection === "backdrop-ai" && (
+ <BackdropAiReplacer glassCard={glassCard} inputClass={inputClass} btnPrimary={btnPrimary} btnSecondary={btnSecondary} />
+ )}
+
+ {/* ==================== SECURITY & ACCESS ==================== */}
+ {activeSection === "security-center" && (
+ <SecurityCenter glassCard={glassCard} inputClass={inputClass} btnPrimary={btnPrimary} btnSecondary={btnSecondary} />
+ )}
+
+ {/* ==================== DAILY TASK MANAGER ==================== */}
+ {activeSection === "task-manager" && (
+ <Suspense fallback={<AdminSectionLoader label="Daily Task Manager" />}>
+ <DailyTaskManager glassCard={glassCard} inputClass={inputClass} btnPrimary={btnPrimary} btnSecondary={btnSecondary} />
+ </Suspense>
+ )}
+
+
+
+
+  {/* ==================== FIREBASE ANALYTICS ==================== */}
+  {activeSection === "fb-analytics" && (
+  <FirebaseAnalyzer glassCard={glassCard} btnPrimary={btnPrimary} btnSecondary={btnSecondary} />
+  )}
+
+ {/* ==================== AI CONFIG ==================== */}
+ {activeSection === "ai-config" && (
+ <AiConfigSection glassCard={glassCard} inputClass={inputClass} btnPrimary={btnPrimary} />
+ )}
+
+ {/* ==================== BRANDING ==================== */}
+ {activeSection === "branding" && (
+ <BrandingSection glassCard={glassCard} inputClass={inputClass} btnPrimary={btnPrimary} />
+ )}
+
+  {/* ==================== LIVE TV ==================== */}
+  {activeSection === "live-tv" && (
+    <LiveTvManager
+      glassCard={glassCard}
+      inputClass={inputClass}
+      btnPrimary={btnPrimary}
+      btnSecondary={btnSecondary}
+    />
+  )}
+
+
+
+
+ {/* ==================== URL CHANGER ==================== */}
+  {activeSection === "url-changer" && (
+    <UrlChangerManager
+      glassCard={glassCard}
+      inputClass={inputClass}
+      btnPrimary={btnPrimary}
+      webseriesData={webseriesData}
+      moviesData={moviesData}
+    />
+  )}
+
+
+ {activeSection === "link-checker" && (
+ <LinkCheckerSection
+ glassCard={glassCard}
+ btnPrimary={btnPrimary}
+ webseriesData={webseriesData}
+ moviesData={moviesData}
+ />
+ )}
+
+        {/* ==================== VIDEO SERVERS ==================== */}
+        {activeSection === "video-servers" && (
+          <VideoServersManager
+            glassCard={glassCard}
+            inputClass={inputClass}
+            btnPrimary={btnPrimary}
+          />
+        )}
+
+
+ {activeSection === "comments" && (
+ <AdminCommentsSection
+ commentsData={commentsData}
+ glassCard={glassCard}
+ inputClass={inputClass}
+ btnPrimary={btnPrimary}
+ webseriesData={webseriesData}
+ moviesData={moviesData}
+ />
+ )}
+
+ {/* ==================== LIVE SUPPORT ==================== */}
+ {activeSection === "live-support" && (
+ <AdminLiveSupportSection glassCard={glassCard} inputClass={inputClass} btnPrimary={btnPrimary} />
+ )}
+
+ {/* ==================== MAINTENANCE ==================== */}
+ {activeSection === "maintenance" && (
+ <MaintenanceSection
+ glassCard={glassCard}
+ inputClass={inputClass}
+ btnPrimary={btnPrimary}
+ maintenanceActive={maintenanceActive}
+ currentMaintenance={currentMaintenance}
+ maintenanceMessage={maintenanceMessage}
+ setMaintenanceMessage={setMaintenanceMessage}
+ maintenanceResumeDate={maintenanceResumeDate}
+ setMaintenanceResumeDate={setMaintenanceResumeDate}
+ />
+ )}
+
+ {/* ==================== WEEKLY EPISODE ==================== */}
+ {activeSection === "weekly-episode" && (
+  <Suspense fallback={<AdminSectionLoader label="Loading Weekly Managerâ€¦" />}>
+ <WeeklyEpisodeManager
+ webseriesData={webseriesData}
+ glassCard={glassCard}
+ inputClass={inputClass}
+ selectClass={selectClass}
+ btnPrimary={btnPrimary}
+ btnSecondary={btnSecondary}
+ onEditSeries={(id) => editSeries(id)}
+ />
+  </Suspense>
+ )}
+
+
+  {activeSection === "analytics" && (
+  <AnalyticsSection
+  glassCard={glassCard}
+  analyticsViews={analyticsViews}
+  activeViewers={activeViewers}
+  dailyActiveUsers={dailyActiveUsers}
+  webseriesData={webseriesData}
+  moviesData={moviesData}
+  appUsers={appUsersGlobal}
+  allTimeTotals={allTimeTotals}
+  />
+  )}
+
+ </main>
+
+ {/* Bottom Navigation */}
+ <nav className="fixed bottom-0 left-0 right-0 h-[58px] bg-[#0D0D1A]/95 border-t border-white/6 flex items-center justify-around z-[100] px-1">
+ {[
+ { section: "dashboard" as Section, icon: <LayoutDashboard size={18} />, label: "Dashboard" },
+ { section: "webseries" as Section, icon: <Film size={18} />, label: "Series" },
+ { section: "weekly-episode" as Section, icon: <CalendarDays size={18} />, label: "Weekly" },
+ { section: "movies" as Section, icon: <Video size={18} />, label: "Movies" },
+ { section: "telegram-post" as Section, icon: <Send size={18} />, label: "Telegram" },
+ ].map(item => (
+ <div key={item.section} onClick={() => showSection(item.section)}
+ className={`flex flex-col items-center gap-0.5 py-2 px-2 cursor-pointer relative transition-colors ${
+ activeSection === item.section ? "text-indigo-400" : "text-zinc-600"
+ }`}>
+ {activeSection === item.section && <div className="absolute -top-px left-1/2 -translate-x-1/2 w-7 h-[2px] bg-indigo-500 rounded-b" />}
+ {item.icon}
+ <span className="text-[10px] font-medium">{item.label}</span>
+ </div>
+ ))}
+ </nav>
+ </div>
+ );
+});
+
+Admin.displayName = "Admin";
+
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// AnalyticsSection â€” memoized, indexed, virtualized for ultra-smooth UI
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+const AnalyticsSection = memo(({
+ glassCard, analyticsViews, activeViewers, dailyActiveUsers, webseriesData, moviesData, appUsers, allTimeTotals,
+}: {
+ glassCard: string;
+ analyticsViews: Record<string, any>;
+ activeViewers: Record<string, any>;
+ dailyActiveUsers: Record<string, any>;
+ webseriesData: any[];
+ moviesData: any[];
+ appUsers: Record<string, any>;
+ allTimeTotals: Record<string, { count?: number; title?: string; poster?: string; lastSeen?: number }>;
+}) => {
+ const [tab, setTab] = useState<"today" | "week" | "all">("today");
+ const [, startTabTransition] = useTransition();
+
+ // Defer heavy inputs so tab clicks stay instant even when analytics blob is large.
+ const deferredViews = useDeferredValue(analyticsViews);
+ const deferredTotals = useDeferredValue(allTimeTotals);
+ const deferredDaily = useDeferredValue(dailyActiveUsers);
+
+ const days = useMemo(() => {
+ const arr: { key: string; label: string; short: string }[] = [];
+ for (let i = 6; i >= 0; i--) {
+ const dt = new Date();
+ dt.setDate(dt.getDate() - i);
+ const key = dt.toISOString().split("T")[0];
+ arr.push({
+ key,
+ label: dt.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }),
+ short: dt.toLocaleDateString(undefined, { weekday: "short" }),
+ });
+ }
+ return arr;
+ }, []);
+ const today = days[days.length - 1].key;
+
+ const titleIndex = useMemo(() => {
+ const m = new Map<string, { title: string; poster: string }>();
+ for (const w of webseriesData) m.set(w.id, { title: w.title || w.id, poster: w.poster || "" });
+ for (const v of moviesData) if (!m.has(v.id)) m.set(v.id, { title: v.title || v.id, poster: v.poster || "" });
+ for (const [id, t] of Object.entries(deferredTotals || {})) {
+ if (!m.has(id) && ((t as any)?.title || (t as any)?.poster)) m.set(id, { title: (t as any).title || id, poster: (t as any).poster || "" });
+ }
+ return m;
+ }, [webseriesData, moviesData, deferredTotals]);
+
+ // Single-pass computation: iterate analyticsViews ONCE and derive
+ // per-day rollups + per-tab per-anime tallies together. This replaces the
+ // previous 4 separate useMemos that each re-scanned the same blob whenever
+ // the user toggled Today / 7 Days / All Time.
+ const computed = useMemo(() => {
+ const keepDates = new Set(days.map(d => d.key));
+ const dayViews: Record<string, number> = {};
+ days.forEach(d => { dayViews[d.key] = 0; });
+ const todayMap = new Map<string, number>();
+ const weekMap = new Map<string, number>();
+
+ const views = deferredViews || {};
+ for (const aId in views) {
+ const byDate = views[aId];
+ if (!byDate) continue;
+ let weekN = 0;
+ for (const dk in byDate) {
+ if (!keepDates.has(dk)) continue;
+ const cnt = Object.keys(byDate[dk] || {}).length;
+ dayViews[dk] += cnt;
+ weekN += cnt;
+ if (dk === today && cnt) todayMap.set(aId, cnt);
+ }
+ if (weekN) weekMap.set(aId, weekN);
+ }
+
+ const allMap = new Map<string, number>();
+ for (const aId in (deferredTotals || {})) {
+ const c = Number((deferredTotals as any)[aId]?.count || 0);
+ if (c) allMap.set(aId, c);
+ }
+
+ const buildList = (m: Map<string, number>) => {
+ const arr: { animeId: string; title: string; poster: string; viewCount: number }[] = [];
+ m.forEach((count, aId) => {
+ const meta = titleIndex.get(aId);
+ arr.push({
+ animeId: aId,
+ title: meta?.title || (deferredTotals as any)?.[aId]?.title || aId,
+ poster: meta?.poster || (deferredTotals as any)?.[aId]?.poster || "",
+ viewCount: count,
+ });
+ });
+ arr.sort((a, b) => b.viewCount - a.viewCount);
+ return arr;
+ };
+
+ return {
+ dayViews,
+ tabs: {
+ today: buildList(todayMap),
+ week: buildList(weekMap),
+ all: buildList(allMap),
+ },
+ };
+ }, [deferredViews, deferredTotals, days, today, titleIndex]);
+
+ // Per-day chart data. Users prefer dailyActive counts, but fall back to
+ // distinct viewer uids from analytics/views when dailyActive is missing â€”
+ // this fixes days that show "0 users" even though views existed.
+ const daily = useMemo(() => {
+ return days.map(d => {
+ let users = Object.keys((deferredDaily as any)?.[d.key] || {}).length;
+ if (!users) {
+ const uidSet = new Set<string>();
+ const v = deferredViews || {};
+ for (const aId in v) {
+ const day = v[aId]?.[d.key];
+ if (day) for (const uid in day) uidSet.add(uid);
+ }
+ users = uidSet.size;
+ }
+ return { ...d, users, views: computed.dayViews[d.key] || 0 };
+ });
+ }, [days, deferredDaily, deferredViews, computed]);
+
+ const weekUsersTotal = useMemo(() => daily.reduce((a, b) => a + b.users, 0), [daily]);
+ const weekViewsTotal = useMemo(() => daily.reduce((a, b) => a + b.views, 0), [daily]);
+ const maxDailyUsers = Math.max(1, ...daily.map(d => d.users));
+ const maxDailyViews = Math.max(1, ...daily.map(d => d.views));
+
+ const todayUsers = useMemo(() => {
+ const map = (deferredDaily as any)?.[today] || {};
+ const arr: { uid: string; userName: string; lastSeen: number; photo: string; email: string }[] = [];
+ for (const uid in map) {
+ const d = map[uid] || {};
+ const app = appUsers?.[uid] || appUsers?.[uid?.replace(/\./g, ",")] || {};
+ arr.push({
+ uid,
+ userName: d.userName || app.displayName || app.name || (app.email ? app.email.split("@")[0] : "Guest"),
+ lastSeen: Number(d.lastSeen || 0),
+ photo: app.photoURL || app.photo || d.photoURL || "",
+ email: app.email || "",
+ });
+ }
+ arr.sort((a, b) => b.lastSeen - a.lastSeen);
+ return arr;
+ }, [deferredDaily, today, appUsers]);
+
+ const totalCurrentViewers = useMemo(() => {
+ let n = 0;
+ for (const k in activeViewers) { const u = activeViewers[k]; if (u) n += Object.keys(u).length; }
+ return n;
+ }, [activeViewers]);
+
+ const contentStats = computed.tabs[tab];
+
+ const totalTodayViews = daily[daily.length - 1]?.views || 0;
+ const allTimeViewsTotal = useMemo(() => Object.values(deferredTotals || {}).reduce((a, b: any) => a + Number(b?.count || 0), 0), [deferredTotals]);
+ const maxStatCount = contentStats[0]?.viewCount || 1;
+
+ const switchTab = useCallback((t: "today" | "week" | "all") => {
+ startTabTransition(() => setTab(t));
+ }, [startTabTransition]);
+
+ const [nowTick, setNowTick] = useState(0);
+ useEffect(() => { const id = setInterval(() => setNowTick(t => t + 1), 60_000); return () => clearInterval(id); }, []);
+ const formatTimeAgo = useCallback((ts: number) => {
+ if (!ts) return "â€”";
+ const s = Math.max(1, Math.floor((Date.now() - ts) / 1000));
+ if (s < 60) return `${s}s ago`;
+ const m = Math.floor(s / 60);
+ if (m < 60) return `${m}m ago`;
+ const h = Math.floor(m / 60);
+ if (h < 24) return `${h}h ago`;
+ return `${Math.floor(h / 24)}d ago`;
+ // eslint-disable-next-line react-hooks/exhaustive-deps
+ }, [nowTick]);
+
+ const MAX_ROWS = 100;
+ const visibleStats = contentStats.slice(0, MAX_ROWS);
+ const visibleUsers = todayUsers.slice(0, MAX_ROWS);
+
+ const StatCard = ({ icon, label, value, from, to, sub }: any) => (
+ <div className="relative overflow-hidden rounded-2xl p-3.5 border border-white/8 bg-gradient-to-br from-[#181828] to-[#111120]">
+ <div className="absolute -right-6 -top-6 w-20 h-20 rounded-full opacity-20" style={{ background: `radial-gradient(circle, ${from}, transparent 70%)` }} />
+ <div className="w-8 h-8 rounded-lg flex items-center justify-center mb-2" style={{ background: `linear-gradient(135deg, ${from}22, ${to}22)`, color: from }}>{icon}</div>
+ <div className="text-xl font-extrabold text-transparent bg-clip-text" style={{ backgroundImage: `linear-gradient(135deg, ${from}, ${to})` }}>{value}</div>
+ <div className="text-[10px] text-[#957DAD] mt-0.5 font-medium">{label}</div>
+ {sub && <div className="text-[9px] text-[#5b5470] mt-0.5">{sub}</div>}
+ </div>
+ );
+
+ const UserAvatar = ({ u }: { u: typeof todayUsers[number] }) => {
+ const [err, setErr] = useState(false);
+ if (u.photo && !err) {
+ return <CachedImg src={u.photo} alt="" onError={() => setErr(true)} className="w-9 h-9 rounded-full object-cover shrink-0 border border-white/10" loading="lazy" decoding="async" />;
+ }
+ return (
+ <div className="w-9 h-9 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-xs font-bold text-white shrink-0">
+ {(u.userName || "?").trim().charAt(0).toUpperCase()}
+ </div>
+ );
+ };
+
+ return (
+ <div style={{ contain: "content" }} className="pb-6">
+ {/* Hero header */}
+ <div className="relative overflow-hidden rounded-2xl p-4 mb-4 border border-white/8 bg-gradient-to-br from-[#1a1030] via-[#151527] to-[#0e0e1c]">
+ <div className="absolute -right-10 -top-10 w-40 h-40 rounded-full bg-purple-600/20 blur-3xl" />
+ <div className="absolute -left-8 -bottom-10 w-32 h-32 rounded-full bg-pink-600/20 blur-3xl" />
+ <div className="relative flex items-center justify-between">
+ <div>
+ <div className="text-[10px] uppercase tracking-widest text-purple-300/70 font-bold">Analytics</div>
+ <h2 className="text-lg font-black text-white mt-0.5">Insights Dashboard</h2>
+ <p className="text-[11px] text-[#957DAD] mt-0.5">Realtime Â· 7-day rolling window Â· all-time totals preserved</p>
+ </div>
+ <div className="flex items-center gap-1.5 bg-emerald-500/10 border border-emerald-500/30 rounded-full px-2.5 py-1">
+ <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+ <span className="text-[10px] font-bold text-emerald-300">{totalCurrentViewers} LIVE</span>
+ </div>
+ </div>
+ </div>
+
+ {/* Stat cards */}
+ <div className="grid grid-cols-2 gap-2.5 mb-4">
+ <StatCard icon={<Users size={14} />} label="Today's Users" value={todayUsers.length} from="#a855f7" to="#ec4899" />
+ <StatCard icon={<Eye size={14} />} label="Today's Views" value={totalTodayViews} from="#38bdf8" to="#6366f1" />
+ <StatCard icon={<Activity size={14} />} label="Watching Now" value={totalCurrentViewers} from="#34d399" to="#10b981" />
+ <StatCard icon={<BarChart3 size={14} />} label="All-Time Views" value={allTimeViewsTotal.toLocaleString()} from="#fbbf24" to="#f97316" sub="never resets" />
+ </div>
+
+ {/* Weekly chart */}
+ <div className={`${glassCard} p-4 mb-4`}>
+ <div className="flex items-center justify-between mb-3">
+ <div>
+ <h3 className="text-sm font-bold text-white flex items-center gap-2"><CalendarDays size={14} className="text-purple-400" /> Last 7 Days</h3>
+ <p className="text-[10px] text-[#957DAD] mt-0.5">{weekUsersTotal.toLocaleString()} users Â· {weekViewsTotal.toLocaleString()} views</p>
+ </div>
+ </div>
+ <div className="flex items-end justify-between gap-1.5 h-32 pt-2">
+ {daily.map(d => {
+ const userH = (d.users / maxDailyUsers) * 100;
+ const viewH = (d.views / maxDailyViews) * 100;
+ const isToday = d.key === today;
+ return (
+ <div key={d.key} className="flex-1 flex flex-col items-center gap-1 min-w-0">
+ <div className="text-[9px] font-bold text-white tabular-nums">{d.users}</div>
+ <div className="flex-1 w-full flex items-end gap-0.5 min-h-0">
+ <div className="flex-1 rounded-t-md bg-gradient-to-t from-purple-600 to-pink-500 transition-all min-h-[2px]" style={{ height: `${userH}%` }} title={`${d.users} users`} />
+ <div className="flex-1 rounded-t-md bg-gradient-to-t from-sky-600 to-cyan-400 transition-all min-h-[2px] opacity-80" style={{ height: `${viewH}%` }} title={`${d.views} views`} />
+ </div>
+ <div className={`text-[9px] font-semibold ${isToday ? "text-purple-300" : "text-[#957DAD]"} truncate w-full text-center`}>{d.short}</div>
+ </div>
+ );
+ })}
+ </div>
+ <div className="flex items-center justify-center gap-3 mt-3 pt-3 border-t border-white/5">
+ <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-gradient-to-t from-purple-600 to-pink-500" /><span className="text-[10px] text-[#957DAD]">Users</span></div>
+ <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-gradient-to-t from-sky-600 to-cyan-400" /><span className="text-[10px] text-[#957DAD]">Views</span></div>
+ </div>
+ </div>
+
+ {/* Active users list */}
+ <div className={`${glassCard} p-4 mb-4`} style={{ contain: "content" }}>
+ <h3 className="text-sm font-bold mb-3 flex items-center gap-2 text-white">
+ <Users size={14} className="text-purple-400" /> Today's Active Users
+ <span className="ml-auto text-[10px] bg-purple-500/15 text-purple-300 px-2 py-0.5 rounded-full font-bold">{todayUsers.length}</span>
+ </h3>
+ {visibleUsers.length === 0 ? (
+ <p className="text-[#957DAD] text-[12px] text-center py-6">No user activity yet today</p>
+ ) : (
+ <div className="space-y-1.5 max-h-[360px] overflow-y-auto pr-1">
+ {visibleUsers.map((u, idx) => (
+ <div key={u.uid} className="flex items-center gap-2.5 bg-[#14141f] hover:bg-[#191926] transition-colors rounded-xl p-2.5 border border-white/5">
+ <span className="text-[10px] text-[#5b5470] font-bold w-5 text-center tabular-nums">{idx + 1}</span>
+ <UserAvatar u={u} />
+ <div className="flex-1 min-w-0">
+ <p className="text-[12px] font-semibold truncate text-white">{u.userName}</p>
+ <p className="text-[10px] text-[#957DAD] truncate">{u.email || `Last seen ${formatTimeAgo(u.lastSeen)}`}</p>
+ </div>
+ <div className="flex items-center gap-1.5 shrink-0">
+ <span className="text-[9px] text-[#957DAD]">{formatTimeAgo(u.lastSeen)}</span>
+ <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+ </div>
+ </div>
+ ))}
+ {todayUsers.length > MAX_ROWS && (
+ <div className="text-center text-[10px] text-[#957DAD] py-2">+{todayUsers.length - MAX_ROWS} more</div>
+ )}
+ </div>
+ )}
+ </div>
+
+ {/* Content ranking with tabs */}
+ <div className={`${glassCard} p-4 mb-2`} style={{ contain: "content" }}>
+ <div className="flex items-center gap-2 mb-3">
+ <h3 className="text-sm font-bold text-white flex items-center gap-2"><Film size={14} className="text-pink-400" /> Top Anime</h3>
+ <span className="ml-auto text-[10px] bg-pink-500/15 text-pink-300 px-2 py-0.5 rounded-full font-bold">{contentStats.length}</span>
+ </div>
+ <div className="grid grid-cols-3 gap-1 mb-3 p-1 bg-[#0f0f1a] rounded-xl border border-white/5">
+ {(["today", "week", "all"] as const).map(t => (
+ <button key={t} onClick={() => switchTab(t)}
+ className={`text-[11px] font-bold py-1.5 rounded-lg transition-all ${tab === t ? "bg-gradient-to-r from-purple-600 to-pink-500 text-white shadow-lg shadow-purple-900/30" : "text-[#957DAD] hover:text-white"}`}>
+ {t === "today" ? "Today" : t === "week" ? "7 Days" : "All Time"}
+ </button>
+ ))}
+ </div>
+ {visibleStats.length === 0 ? (
+ <p className="text-[#957DAD] text-[12px] text-center py-6">No views to show</p>
+ ) : (
+ <div className="space-y-2 max-h-[460px] overflow-y-auto pr-1">
+ {visibleStats.map((item, idx) => {
+ const rankBg = idx === 0 ? "from-amber-500 to-orange-500" : idx === 1 ? "from-slate-300 to-slate-400" : idx === 2 ? "from-orange-600 to-amber-700" : "from-[#2a2338] to-[#1f1b2b]";
+ const rankText = idx < 3 ? "text-black" : "text-[#957DAD]";
+ return (
+ <div key={item.animeId} className="flex items-center gap-2.5 bg-[#14141f] hover:bg-[#191926] transition-colors rounded-xl p-2 border border-white/5">
+ <div className={`w-6 h-6 rounded-lg bg-gradient-to-br ${rankBg} flex items-center justify-center text-[10px] font-black tabular-nums shrink-0 ${rankText}`}>{idx + 1}</div>
+ {item.poster ? (
+ <CachedImg src={item.poster} loading="lazy" decoding="async" className="w-9 h-[52px] rounded-md object-cover shrink-0 border border-white/10"
+ onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
+ ) : (
+ <div className="w-9 h-[52px] rounded-md bg-gradient-to-br from-purple-500/20 to-pink-500/20 flex items-center justify-center shrink-0 border border-white/5">
+ <Film size={14} className="text-purple-400" />
+ </div>
+ )}
+ <div className="flex-1 min-w-0">
+ <p className="text-[12px] font-semibold truncate text-white">{item.title}</p>
+ <div className="w-full h-1.5 bg-[#0f0f1a] rounded-full mt-1.5 overflow-hidden">
+ <div className="h-full rounded-full bg-gradient-to-r from-purple-600 via-pink-500 to-orange-400" style={{ width: `${Math.min(100, (item.viewCount / maxStatCount) * 100)}%` }} />
+ </div>
+ </div>
+ <div className="text-right shrink-0">
+ <div className="text-sm font-black text-transparent bg-clip-text bg-gradient-to-r from-pink-400 to-orange-400 tabular-nums">{item.viewCount.toLocaleString()}</div>
+ <div className="text-[8px] text-[#5b5470] uppercase tracking-wider font-bold">views</div>
+ </div>
+ </div>
+ );
+ })}
+ {contentStats.length > MAX_ROWS && (
+ <div className="text-center text-[10px] text-[#957DAD] py-2">+{contentStats.length - MAX_ROWS} more</div>
+ )}
+ </div>
+ )}
+ </div>
+
+ <div className="text-[10px] text-[#5b5470] text-center pt-2 pb-1">
+ Daily analytics rotate every 7 days Â· All-time totals never reset
+ </div>
+ </div>
+ );
+});
+AnalyticsSection.displayName = "AnalyticsSection";
+
+
+
+// Maintenance Section sub-component
+const MaintenanceSection = ({
+ glassCard, inputClass, btnPrimary, maintenanceActive, currentMaintenance,
+ maintenanceMessage, setMaintenanceMessage, maintenanceResumeDate, setMaintenanceResumeDate,
+}: {
+ glassCard: string; inputClass: string; btnPrimary: string; maintenanceActive: boolean;
+ currentMaintenance: any; maintenanceMessage: string; setMaintenanceMessage: (v: string) => void;
+ maintenanceResumeDate: string; setMaintenanceResumeDate: (v: string) => void;
+}) => {
+ const [countdown, setCountdown] = useState("");
+ const [hasCountdown, setHasCountdown] = useState(false);
+
+ useEffect(() => {
+ if (!currentMaintenance?.active || !currentMaintenance?.resumeDate) {
+ setHasCountdown(false);
+ setCountdown("");
+ return;
+ }
+
+ const updateCountdown = () => {
+ const resumeTime = new Date(currentMaintenance.resumeDate).getTime() + 86400000; // end of that day
+ const diff = resumeTime - Date.now();
+ if (diff <= 0) {
+ // Auto turn on server - extend timers first
+ const duration = currentMaintenance?.startedAt ? Date.now() - currentMaintenance.startedAt : 0;
+ if (duration > 0) extendAllUserTimers(duration);
+ update(ref(db, "maintenance"), { active: false, resumeDate: null })
+ .then(() => toast.success("Server auto-started! âœ…"))
+ .catch(() => {});
+ setHasCountdown(false);
+ setCountdown("");
+ return;
+ }
+ setHasCountdown(true);
+ const d = Math.floor(diff / 86400000);
+ const h = Math.floor((diff % 86400000) / 3600000);
+ const m = Math.floor((diff % 3600000) / 60000);
+ const s = Math.floor((diff % 60000) / 1000);
+ if (d > 0) setCountdown(`${d}d ${h.toString().padStart(2, "0")}h ${m.toString().padStart(2, "0")}m ${s.toString().padStart(2, "0")}s`);
+ else setCountdown(`${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`);
+ };
+
+ updateCountdown();
+ const interval = setInterval(updateCountdown, 1000);
+ return () => clearInterval(interval);
+ }, [currentMaintenance]);
+
+ const handleShutdown = () => {
+ if (!maintenanceMessage.trim()) { toast.error("Please enter a message"); return; }
+ if (confirm("Shut down the server? All users will be blocked!")) {
+ update(ref(db, "maintenance"), {
+ active: true,
+ message: maintenanceMessage,
+ resumeDate: maintenanceResumeDate || null,
+ startedAt: Date.now(),
+ }).then(() => toast.success("Server shut down!"))
+ .catch(err => toast.error("Error: " + err.message));
+ }
+ };
+
+ const extendAllUserTimers = async (duration: number) => {
+ try {
+ // Extend premium users' expiresAt
+ const usersSnap = await get(ref(db, "users"));
+ if (usersSnap.exists()) {
+ const allUsers = usersSnap.val();
+ const updates: Record<string, any> = {};
+ Object.entries(allUsers).forEach(([uid, userData]: [string, any]) => {
+ if (userData?.premium?.active && userData?.premium?.expiresAt) {
+ updates[`users/${uid}/premium/expiresAt`] = userData.premium.expiresAt + duration;
+ }
+ });
+ if (Object.keys(updates).length > 0) {
+ await update(ref(db), updates);
+ toast.success(`Extended ${Object.keys(updates).length} premium user(s) timers!`);
+ }
+ }
+ // Store last maintenance info for client-side free access adjustment
+ await update(ref(db, "maintenance"), {
+ lastPauseDuration: duration,
+ lastResumedAt: Date.now(),
+ });
+ } catch (err: any) {
+ toast.error("Error extending timers: " + err.message);
+ }
+ };
+
+ const handleStartNow = async () => {
+ if (confirm("Start the server immediately?")) {
+ const duration = currentMaintenance?.startedAt ? Date.now() - currentMaintenance.startedAt : 0;
+ if (duration > 0) await extendAllUserTimers(duration);
+ update(ref(db, "maintenance"), { active: false, resumeDate: null })
+ .then(() => { toast.success("Server is online! âœ…"); setMaintenanceResumeDate(""); })
+ .catch(err => toast.error("Error: " + err.message));
+ }
+ };
+
+ return (
+ <div>
+ <div className={`${glassCard} p-4 mb-4`}>
+ <h3 className="text-sm font-semibold mb-3.5 flex items-center gap-2">
+ <Power size={14} className={maintenanceActive ? "text-red-500" : "text-green-500"} />
+ Server Status: {maintenanceActive ? "ğŸ”´ Offline (Maintenance)" : "ğŸŸ¢ Online"}
+ </h3>
+
+ {currentMaintenance?.active && (
+ <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 mb-4">
+ <p className="text-sm text-red-400 font-medium mb-1">Server is currently offline</p>
+ <p className="text-xs text-[#D1C4E9]">{currentMaintenance.message}</p>
+ {currentMaintenance.resumeDate && (
+ <p className="text-xs text-yellow-400 mt-1">
+ Resume Date: {new Date(currentMaintenance.resumeDate).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}
+ </p>
+ )}
+
+ {/* Countdown Timer */}
+ {hasCountdown && countdown && (
+ <div className="mt-3 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-xl text-center">
+ <p className="text-[10px] text-yellow-400 uppercase tracking-wider mb-1">Auto-start in</p>
+ <p className="text-2xl font-bold font-mono text-yellow-300 tracking-wider">{countdown}</p>
+ </div>
+ )}
+
+ {/* Start Server Now Button */}
+ <button onClick={handleStartNow}
+ className="w-full mt-3 py-3 bg-gradient-to-r from-green-600 to-green-800 text-white font-semibold rounded-xl flex items-center justify-center gap-2 shadow-[0_4px_15px_rgba(34,197,94,0.3)] hover:shadow-[0_6px_25px_rgba(34,197,94,0.5)] transition-all">
+ <Power size={16} /> Start Server Now
+ </button>
+ </div>
+ )}
+
+ <div className="space-y-3">
+ <div>
+ <label className="text-[11px] text-[#D1C4E9] mb-1 block">Maintenance Message</label>
+ <textarea value={maintenanceMessage} onChange={e => setMaintenanceMessage(e.target.value)}
+ className={`${inputClass} min-h-[80px] resize-none`}
+ placeholder="Write a message for users..." />
+ </div>
+ <div>
+ <label className="text-[11px] text-[#D1C4E9] mb-1 block">Resume Date</label>
+ <input type="date" value={maintenanceResumeDate} onChange={e => setMaintenanceResumeDate(e.target.value)}
+ className={inputClass} />
+ </div>
+
+ {!maintenanceActive ? (
+ <button onClick={handleShutdown}
+ className="w-full py-3.5 bg-gradient-to-r from-red-600 to-red-800 text-white font-semibold rounded-xl flex items-center justify-center gap-2 shadow-[0_4px_15px_rgba(239,68,68,0.3)] hover:shadow-[0_6px_25px_rgba(239,68,68,0.5)] transition-all">
+ <AlertTriangle size={16} /> Shut Down Server
+ </button>
+ ) : (
+ <button onClick={handleStartNow}
+ className={`${btnPrimary} w-full py-3.5 flex items-center justify-center gap-2`}>
+ <Power size={16} /> Start Server
+ </button>
+ )}
+ </div>
+ </div>
+ </div>
+ );
+};
+
+// User Password Lookup sub-component
+const UserPasswordLookup = ({ inputClass, btnPrimary }: { inputClass: string; btnPrimary: string }) => {
+ const [searchInput, setSearchInput] = useState("");
+ const [searchResult, setSearchResult] = useState<any>(null);
+ const [searching, setSearching] = useState(false);
+ const [showPassword, setShowPassword] = useState(false);
+
+ const lookupUser = async () => {
+ if (!searchInput.trim()) { toast.error("Enter user email or username"); return; }
+ setSearching(true);
+ setSearchResult(null);
+ setShowPassword(false);
+ try {
+ const input = searchInput.trim().toLowerCase();
+ const commaKey = input.replace(/\./g, ",").replace(/[^a-z0-9@,_-]/g, "_");
+ const legacyKey = input.replace(/[^a-z0-9]/g, "_");
+
+ // Search by key
+ for (const key of [commaKey, legacyKey]) {
+ const snap = await get(ref(db, `appUsers/${key}`));
+ if (snap.exists()) {
+ setSearchResult({ ...snap.val(), _key: key });
+ setSearching(false);
+ return;
+ }
+ }
+
+ // Search by name/email fields
+ const allSnap = await get(ref(db, "appUsers"));
+ if (allSnap.exists()) {
+ const allData = allSnap.val();
+ for (const key of Object.keys(allData)) {
+ const u = allData[key];
+ if (u && typeof u === 'object') {
+ const nameMatch = u.name && u.name.toLowerCase() === input;
+ const emailMatch = u.email && u.email.toLowerCase() === input;
+ if (nameMatch || emailMatch) {
+ setSearchResult({ ...u, _key: key });
+ setSearching(false);
+ return;
+ }
+ }
+ }
+ }
+
+ toast.error("User not found!");
+ } catch (err: any) { toast.error("Error: " + err.message); }
+ setSearching(false);
+ };
+
+ return (
+ <div>
+ <div className="flex gap-2.5 mb-3">
+ <input value={searchInput} onChange={e => setSearchInput(e.target.value)}
+ onKeyDown={e => e.key === "Enter" && lookupUser()}
+ className={`${inputClass} flex-1`} placeholder="Enter email or username" />
+ <button onClick={lookupUser} disabled={searching}
+ className={`${btnPrimary} px-4 py-3 flex items-center gap-1.5`}>
+ {searching ? <RefreshCw size={14} className="animate-spin" /> : <Search size={14} />}
+ </button>
+ </div>
+ {searchResult && (
+ <div className="bg-[#1A1A2E] border border-purple-500/30 rounded-xl p-4 mt-3">
+ <div className="space-y-2">
+ <div className="flex justify-between">
+ <span className="text-[11px] text-[#957DAD]">Name:</span>
+ <span className="text-[13px] font-medium">{searchResult.name || "N/A"}</span>
+ </div>
+ <div className="flex justify-between">
+ <span className="text-[11px] text-[#957DAD]">Email:</span>
+ <span className="text-[13px] font-medium">{searchResult.email || "N/A"}</span>
+ </div>
+ <div className="flex justify-between items-center">
+ <span className="text-[11px] text-[#957DAD]">Password:</span>
+ {searchResult.password ? (
+ <div className="flex items-center gap-2">
+ <span className="text-[13px] font-mono font-bold text-green-400">
+ {showPassword ? searchResult.password : "â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"}
+ </span>
+ <button onClick={() => setShowPassword(!showPassword)}
+ className="text-purple-500 hover:text-purple-400 transition-colors">
+ {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+ </button>
+ <button onClick={() => { navigator.clipboard.writeText(searchResult.password); toast.success("Copied!"); }}
+ className="text-[10px] bg-purple-500/20 px-2 py-1 rounded-full hover:bg-purple-500/40 transition-all">Copy</button>
+ </div>
+ ) : (
+ <span className="text-[13px] text-yellow-400">
+ {searchResult.googleAuth ? "Google Login (No password)" : "Password not set"}
+ </span>
+ )}
+ </div>
+ <div className="flex justify-between">
+ <span className="text-[11px] text-[#957DAD]">ID:</span>
+ <span className="text-[11px] font-mono text-[#D1C4E9]">{searchResult.id || searchResult._key}</span>
+ </div>
+ </div>
+ </div>
+ )}
+ </div>
+ );
+};
+
+// Admin Live Support Section sub-component
+const AdminLiveSupportSection = ({
+ glassCard, inputClass, btnPrimary,
+}: {
+ glassCard: string; inputClass: string; btnPrimary: string;
+}) => {
+ const [chats, setChats] = useState<any[]>([]);
+ const [selectedChat, setSelectedChat] = useState<string | null>(null);
+ const [chatMessages, setChatMessages] = useState<any[]>([]);
+ const [replyText, setReplyText] = useState("");
+ const messagesEndRef = useRef<HTMLDivElement>(null);
+
+ // Load all support chats
+ useEffect(() => {
+ const unsub = onValue(query(ref(db, "supportChats"), orderByChild("meta/lastTimestamp"), limitToLast(200)), (snap) => {
+ const data = snap.val() || {};
+ const chatList = Object.entries(data).map(([userId, chat]: any) => ({
+ userId,
+ userName: chat.meta?.userName || "Unknown",
+ lastMessage: chat.meta?.lastMessage || "",
+ lastTimestamp: chat.meta?.lastTimestamp || 0,
+ unread: chat.meta?.unread || false,
+ }));
+ chatList.sort((a, b) => b.lastTimestamp - a.lastTimestamp);
+  startTransition(() => setChats(chatList.slice(0, 200)));
+ });
+ return () => unsub();
+ }, []);
+
+ // Load messages for selected chat
+ useEffect(() => {
+ if (!selectedChat) { setChatMessages([]); return; }
+ // Mark as read
+ update(ref(db, `supportChats/${selectedChat}/meta`), { unread: false }).catch(() => {});
+ const unsub = onValue(query(ref(db, `supportChats/${selectedChat}/messages`), limitToLast(300)), (snap) => {
+ const data = snap.val() || {};
+ const msgs = Object.entries(data).map(([id, msg]: any) => ({ id, ...msg }));
+ msgs.sort((a, b) => a.timestamp - b.timestamp);
+  startTransition(() => setChatMessages(msgs.slice(-300)));
+ });
+ return () => unsub();
+ }, [selectedChat]);
+
+ useEffect(() => {
+ messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+ }, [chatMessages]);
+
+ const sendAdminReply = async () => {
+ if (!replyText.trim() || !selectedChat) return;
+ try {
+ const msgRef = push(ref(db, `supportChats/${selectedChat}/messages`));
+ await set(msgRef, {
+ role: "admin",
+ content: replyText.trim(),
+ timestamp: Date.now(),
+ userName: "Admin",
+ });
+ await update(ref(db, `supportChats/${selectedChat}/meta`), {
+ lastMessage: `Admin: ${replyText.trim()}`,
+ lastTimestamp: Date.now(),
+ });
+ setReplyText("");
+ toast.success("à¦°à¦¿à¦ªà§à¦²à¦¾this send done");
+ } catch {
+ toast.error("à¦°à¦¿à¦ªà§à¦²à¦¾this à¦ªà¦¾à¦ à¦¾à¦¤à§‡ failed");
+ }
+ };
+
+ const deleteChat = async (userId: string) => {
+ if (!confirm("this à¦šà§à¦¯à¦¾à¦Ÿ à¦®à§à¦›à§‡ à¦«à§‡à¦²à¦¬à§‡à¦¨?")) return;
+ try {
+ await remove(ref(db, `supportChats/${userId}`));
+ if (selectedChat === userId) setSelectedChat(null);
+ toast.success("à¦šà§à¦¯à¦¾à¦Ÿ à¦®à§à¦›à§‡ à¦«à§‡à¦²à¦¾ done");
+ } catch {
+ toast.error("à¦®à§à¦›à¦¤à§‡ failed");
+ }
+ };
+
+ const formatTime = (ts: number) => {
+ if (!ts) return "";
+ const d = new Date(ts);
+ return d.toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+ };
+
+ return (
+ <div className="space-y-4">
+ <div className={`${glassCard} p-4`}>
+ <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+ <MessageCircle size={14} className="text-indigo-400" /> Live Support Chats ({chats.length})
+ </h3>
+
+ {selectedChat ? (
+ <div>
+ {/* Back button + chat header */}
+ <button
+ onClick={() => setSelectedChat(null)}
+ className="text-xs text-indigo-400 hover:text-indigo-300 mb-3 flex items-center gap-1"
+ >
+ <ChevronLeft size={14} /> all à¦šà§à¦¯à¦¾à¦Ÿà§‡ à¦«à¦¿à¦°à§à¦¨
+ </button>
+ <div className="text-sm font-medium mb-3 text-white/80">
+ {chats.find(c => c.userId === selectedChat)?.userName || selectedChat}
+ </div>
+
+ {/* Messages */}
+ <div className="space-y-2 max-h-[400px] overflow-y-auto mb-3 p-2 bg-black/20 rounded-lg">
+ {chatMessages.map((msg) => (
+ <div key={msg.id} className={`flex ${msg.role === "admin" ? "justify-end" : "justify-start"}`}>
+ <div className={`max-w-[80%] rounded-xl px-3 py-2 text-xs ${
+ msg.role === "admin"
+ ? "bg-emerald-600/30 text-emerald-100"
+ : msg.role === "assistant"
+ ? "bg-indigo-600/20 text-indigo-100"
+ : "bg-zinc-700/50 text-white/90"
+ }`}>
+ <span className="text-[10px] font-bold opacity-60 block mb-0.5">
+ {msg.role === "admin" ? "ğŸ›¡ï¸ Admin" : msg.role === "assistant" ? "ğŸ¤– AI Bot" : `ğŸ‘¤ ${msg.userName || "User"}`}
+ </span>
+ <p className="whitespace-pre-wrap">{msg.content}</p>
+ <span className="text-[9px] opacity-40 block text-right mt-1">{formatTime(msg.timestamp)}</span>
+ </div>
+ </div>
+ ))}
+ <div ref={messagesEndRef} />
+ </div>
+
+ {/* Reply input */}
+ <div className="flex gap-2">
+ <input
+ value={replyText}
+ onChange={e => setReplyText(e.target.value)}
+ onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendAdminReply(); } }}
+ placeholder="admin à¦°à¦¿à¦ªà§à¦²à¦¾this à¦²à¦¿à¦–à§à¦¨..."
+ className={`${inputClass} flex-1`}
+ />
+ <button
+ onClick={sendAdminReply}
+ disabled={!replyText.trim()}
+ className={`${btnPrimary} px-4 py-2 text-xs disabled:opacity-40`}
+ >
+ <Send size={14} />
+ </button>
+ </div>
+ </div>
+ ) : (
+ <div className="space-y-2">
+ {chats.length === 0 && (
+ <p className="text-xs text-zinc-500 text-center py-6">any support message none</p>
+ )}
+ {chats.map((chat) => (
+ <div
+ key={chat.userId}
+ className={`flex items-center justify-between p-3 rounded-lg cursor-pointer transition-all ${
+ chat.unread
+ ? "bg-indigo-600/15 border border-indigo-500/30"
+ : "bg-zinc-800/30 border border-zinc-700/30 hover:border-zinc-600"
+ }`}
+ onClick={() => setSelectedChat(chat.userId)}
+ >
+ <div className="flex-1 min-w-0">
+ <div className="flex items-center gap-2">
+ <span className="text-xs font-medium truncate">{chat.userName}</span>
+ {chat.unread && <span className="w-2 h-2 bg-indigo-400 rounded-full animate-pulse" />}
+ </div>
+ <p className="text-[10px] text-zinc-400 truncate mt-0.5">{chat.lastMessage}</p>
+ <span className="text-[9px] text-zinc-500">{formatTime(chat.lastTimestamp)}</span>
+ </div>
+ <button
+ onClick={(e) => { e.stopPropagation(); deleteChat(chat.userId); }}
+ className="p-1.5 text-red-400/60 hover:text-red-400 transition-colors"
+ >
+ <Trash2 size={12} />
+ </button>
+ </div>
+ ))}
+ </div>
+ )}
+ </div>
+ </div>
+ );
+};
+
+// Admin Comments Section sub-component
+const AdminCommentsSection = ({
+ commentsData, glassCard, inputClass, btnPrimary, webseriesData, moviesData,
+}: {
+ commentsData: any[]; glassCard: string; inputClass: string; btnPrimary: string;
+ webseriesData: any[]; moviesData: any[];
+}) => {
+ const [replyText, setReplyText] = useState("");
+ const [replyingTo, setReplyingTo] = useState<string | null>(null);
+ const [filter, setFilter] = useState("");
+
+ const getContentTitle = (animeId: string) => {
+ const ws = webseriesData.find(s => s.id === animeId);
+ if (ws) return ws.title;
+ const mv = moviesData.find(m => m.id === animeId);
+ if (mv) return mv.title;
+ return animeId;
+ };
+
+ const formatTime = (ts: number) => {
+ if (!ts) return "";
+ const diff = Date.now() - ts;
+ if (diff < 60000) return "Just now";
+ if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+ if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+ return new Date(ts).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+ };
+
+ const postAdminReply = async (animeId: string, commentId: string) => {
+ if (!replyText.trim()) return;
+
+ const text = replyText.trim();
+ const targetComment = commentsData.find((c) => c.animeId === animeId && c.id === commentId);
+
+ try {
+ const now = Date.now();
+ const replyRef = push(ref(db, `comments/${animeId}/${commentId}/replies`));
+ await set(replyRef, {
+ userId: "admin",
+ userName: "Admin",
+ text,
+ timestamp: now,
+ });
+
+
+ setReplyText("");
+ setReplyingTo(null);
+ toast.success("Reply posted!");
+ } catch {
+ toast.error("Error posting reply");
+ }
+ };
+
+ const deleteComment = (animeId: string, commentId: string) => {
+ if (confirm("Delete this comment?")) {
+ remove(ref(db, `comments/${animeId}/${commentId}`))
+ .then(() => toast.success("Comment deleted"))
+ .catch(() => toast.error("Error deleting"));
+ }
+ };
+
+ const deleteReply = (animeId: string, commentId: string, replyId: string) => {
+ if (confirm("Delete this reply?")) {
+ remove(ref(db, `comments/${animeId}/${commentId}/replies/${replyId}`))
+ .then(() => toast.success("Reply deleted"))
+ .catch(() => toast.error("Error deleting"));
+ }
+ };
+
+ const filteredComments = filter
+ ? commentsData.filter(c => getContentTitle(c.animeId).toLowerCase().includes(filter.toLowerCase()) || c.userName?.toLowerCase().includes(filter.toLowerCase()) || c.text?.toLowerCase().includes(filter.toLowerCase()))
+ : commentsData;
+
+ return (
+ <div>
+ <div className={`${glassCard} p-4 mb-4`}>
+ <h3 className="text-sm font-semibold mb-3.5 flex items-center gap-2">
+ <MessageCircle size={14} className="text-purple-500" /> All Comments ({commentsData.length})
+ </h3>
+ <input
+ value={filter}
+ onChange={e => setFilter(e.target.value)}
+ className={`${inputClass} mb-4`}
+ placeholder="ğŸ” Search comments by content, user, or text..."
+ />
+ {filteredComments.length === 0 ? (
+ <p className="text-[#957DAD] text-[13px] text-center py-8">No comments found</p>
+ ) : (
+ <div className="space-y-3 max-h-[600px] overflow-y-auto">
+ {filteredComments.slice(0, 50).map((comment) => (
+ <div key={comment.id} className="bg-[#1A1A2E] border border-white/5 rounded-xl p-3.5">
+ {/* Content label */}
+ <div className="flex items-center gap-2 mb-2">
+ <span className="text-[10px] bg-purple-500/20 text-purple-400 px-2 py-0.5 rounded-full font-medium truncate max-w-[200px]">
+ ğŸ“º {getContentTitle(comment.animeId)}
+ </span>
+ <span className="text-[10px] text-[#957DAD]">{formatTime(comment.timestamp)}</span>
+ </div>
+ {/* Comment */}
+ <div className="flex justify-between items-start">
+ <div className="flex-1 min-w-0">
+ <span className="text-[12px] font-semibold text-purple-400">{comment.userName}</span>
+ <p className="text-[12px] text-[#D1C4E9] mt-0.5 break-words">{comment.text}</p>
+ </div>
+ <button onClick={() => deleteComment(comment.animeId, comment.id)}
+ className="text-[#957DAD] hover:text-red-400 transition-colors flex-shrink-0 ml-2">
+ <Trash2 size={12} />
+ </button>
+ </div>
+
+ {/* Replies */}
+ {comment.replies?.length > 0 && (
+ <div className="ml-4 mt-2 border-l-2 border-purple-500/20 pl-3 space-y-1.5">
+ {comment.replies.map((r: any) => (
+ <div key={r.id} className="bg-black/20 rounded-lg p-2 flex justify-between items-start">
+ <div className="flex-1 min-w-0">
+ <span className={`text-[11px] font-semibold ${r.userId === "admin" ? "text-green-400" : "text-[#957DAD]"}`}>
+ {r.userName} {r.userId === "admin" && "âœ“"}
+ </span>
+ <p className="text-[11px] text-[#D1C4E9] break-words">{r.text}</p>
+ <span className="text-[9px] text-[#957DAD]">{formatTime(r.timestamp)}</span>
+ </div>
+ <button onClick={() => deleteReply(comment.animeId, comment.id, r.id)}
+ className="text-[#957DAD] hover:text-red-400 transition-colors flex-shrink-0 ml-2">
+ <Trash2 size={10} />
+ </button>
+ </div>
+ ))}
+ </div>
+ )}
+
+ {/* Reply input */}
+ <div className="mt-2 flex gap-2">
+ {replyingTo === comment.id ? (
+ <div className="flex gap-2 w-full items-end">
+ <textarea
+ value={replyText}
+ onChange={e => setReplyText(e.target.value)}
+ onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); postAdminReply(comment.animeId, comment.id); } }}
+ placeholder="Admin reply..."
+ rows={1}
+ className={`${inputClass} flex-1 !py-2 !text-xs resize-none min-h-[36px] max-h-[80px]`}
+ onInput={(e: any) => { e.target.style.height = "auto"; e.target.style.height = Math.min(e.target.scrollHeight, 80) + "px"; }}
+ autoFocus
+ />
+ <button onClick={() => postAdminReply(comment.animeId, comment.id)}
+ className="bg-gradient-to-r from-green-600 to-green-800 text-white px-3 py-2 rounded-lg text-xs font-semibold flex items-center gap-1">
+ <Send size={12} /> Send
+ </button>
+ <button onClick={() => { setReplyingTo(null); setReplyText(""); }}
+ className="text-[#957DAD] hover:text-red-400 p-2">
+ <X size={14} />
+ </button>
+ </div>
+ ) : (
+ <button
+ onClick={() => { setReplyingTo(comment.id); setReplyText(""); }}
+ className="text-[10px] text-purple-400 hover:text-purple-300 flex items-center gap-1 transition-colors"
+ >
+ <Reply size={12} /> Reply as Admin
+ </button>
+ )}
+ </div>
+ </div>
+ ))}
+ </div>
+ )}
+ </div>
+ </div>
+ );
+};
+
+// Auto Import Section sub-component
+const AutoImportSection = ({
+ glassCard, inputClass, btnPrimary, btnSecondary, categoryList, languageOptions,
+ webseriesData, moviesData, selectClass,
+}: {
+ glassCard: string; inputClass: string; btnPrimary: string; btnSecondary: string;
+ categoryList: { id: string; name: string }[]; languageOptions: string[];
+ webseriesData: any[]; moviesData: any[]; selectClass: string;
+}) => {
+ const [browseType, setBrowseType] = useState<"trending_tv" | "trending_movie" | "popular_tv" | "popular_movie" | "top_tv" | "top_movie">("trending_tv");
+ const [browseResults, setBrowseResults] = useState<any[]>([]);
+ const [browseLoading, setBrowseLoading] = useState(false);
+ const [browsePage, setBrowsePage] = useState(1);
+ const [importingId, setImportingId] = useState<number | null>(null);
+ const [importLanguage, setImportLanguage] = useState("Hindi");
+ const [importCategory, setImportCategory] = useState("");
+ const [autoImportMode, setAutoImportMode] = useState(false);
+
+ const browseLabels: Record<string, string> = {
+ trending_tv: "ğŸ”¥ Trending TV",
+ trending_movie: "ğŸ”¥ Trending Movies",
+ popular_tv: "â­ Popular TV",
+ popular_movie: "â­ Popular Movies",
+ top_tv: "ğŸ† Top Rated TV",
+ top_movie: "ğŸ† Top Rated Movies",
+ };
+
+ const fetchBrowse = async (page = 1) => {
+ setBrowseLoading(true);
+ try {
+ let url = "";
+ if (browseType === "trending_tv") url = `${TMDB_BASE_URL}/trending/tv/week?api_key=${TMDB_API_KEY}&page=${page}`;
+ else if (browseType === "trending_movie") url = `${TMDB_BASE_URL}/trending/movie/week?api_key=${TMDB_API_KEY}&page=${page}`;
+ else if (browseType === "popular_tv") url = `${TMDB_BASE_URL}/tv/popular?api_key=${TMDB_API_KEY}&page=${page}`;
+ else if (browseType === "popular_movie") url = `${TMDB_BASE_URL}/movie/popular?api_key=${TMDB_API_KEY}&page=${page}`;
+ else if (browseType === "top_tv") url = `${TMDB_BASE_URL}/tv/top_rated?api_key=${TMDB_API_KEY}&page=${page}&with_genres=16`;
+ else if (browseType === "top_movie") url = `${TMDB_BASE_URL}/movie/top_rated?api_key=${TMDB_API_KEY}&page=${page}&with_genres=16`;
+
+ const res = await fetch(url);
+ const data = await res.json();
+ if (page === 1) setBrowseResults(data.results || []);
+ else setBrowseResults(prev => [...prev, ...(data.results || [])]);
+ setBrowsePage(page);
+ } catch { toast.error("Error fetching from TMDB"); }
+ setBrowseLoading(false);
+ };
+
+ useEffect(() => { fetchBrowse(1); }, [browseType]);
+
+ const isAlreadyAdded = (tmdbId: number): boolean => {
+ const isTV = browseType.includes("tv");
+ if (isTV) return webseriesData.some(s => s.tmdbId === tmdbId || s.tmdbId === String(tmdbId));
+ return moviesData.some(m => m.tmdbId === tmdbId || m.tmdbId === String(tmdbId));
+ };
+
+ const autoImportItem = async (item: any) => {
+ const isTV = browseType.includes("tv");
+ const tmdbId = item.id;
+ 
+ if (isAlreadyAdded(tmdbId)) {
+ toast.info(`"${item.name || item.title}" already exists!`);
+ return;
+ }
+
+ if (!importCategory) {
+ toast.error("Please select a category first!");
+ return;
+ }
+
+ setImportingId(tmdbId);
+ try {
+ const endpoint = isTV ? `tv/${tmdbId}` : `movie/${tmdbId}`;
+ const res = await fetch(`${TMDB_BASE_URL}/${endpoint}?api_key=${TMDB_API_KEY}&append_to_response=credits,videos,images`);
+ const data = await res.json();
+ if (data.success === false) throw new Error("Not found");
+
+ let trailerUrl = "";
+ if (data.videos?.results) {
+ const trailer = data.videos.results.find((v: any) => v.type === "Trailer" && v.site === "YouTube");
+ if (trailer) trailerUrl = `https://www.youtube.com/watch?v=${trailer.key}`;
+ }
+ let logoUrl = "";
+ if (data.images?.logos?.length > 0) {
+ const logo = data.images.logos.find((l: any) => l.iso_639_1 === "en") || data.images.logos[0];
+ logoUrl = TMDB_IMG_BASE + "w500" + logo.file_path;
+ }
+ const cast = data.credits?.cast?.slice(0, 10).map((c: any) => ({
+ name: c.name, character: c.character, photo: c.profile_path ? TMDB_IMG_BASE + "w185" + c.profile_path : ""
+ })) || [];
+
+ if (isTV) {
+ const seasons: any[] = [];
+ if (data.seasons) {
+ data.seasons.filter((s: any) => s.season_number > 0).forEach((season: any) => {
+ seasons.push({
+ name: season.name, seasonNumber: season.season_number,
+ episodes: Array(season.episode_count).fill(null).map((_, i) => ({
+ episodeNumber: i + 1, title: `Episode ${i + 1}`, link: ""
+ }))
+ });
+ });
+ }
+
+ const seriesData = {
+ tmdbId: data.id,
+ title: data.name || "",
+ logo: logoUrl,
+ poster: data.poster_path ? TMDB_IMG_BASE + "original" + data.poster_path : "",
+ backdrop: data.backdrop_path ? TMDB_IMG_BASE + "original" + data.backdrop_path : "",
+ trailer: trailerUrl,
+ year: data.first_air_date?.split("-")[0] || "",
+ rating: data.vote_average?.toFixed(1) || "",
+ language: importLanguage,
+ category: importCategory,
+ storyline: data.overview || "",
+ cast,
+ seasons,
+ type: "webseries",
+ createdAt: Date.now(),
+ };
+ await set(push(ref(db, "webseries")), seriesData);
+ toast.success(`âœ… "${data.name}" auto-imported as Series!`);
+ } else {
+ const movieData = {
+ tmdbId: data.id,
+ title: data.title || "",
+ logo: logoUrl,
+ poster: data.poster_path ? TMDB_IMG_BASE + "original" + data.poster_path : "",
+ backdrop: data.backdrop_path ? TMDB_IMG_BASE + "original" + data.backdrop_path : "",
+ trailer: trailerUrl,
+ year: data.release_date?.split("-")[0] || "",
+ rating: data.vote_average?.toFixed(1) || "",
+ language: importLanguage,
+ category: importCategory,
+ storyline: data.overview || "",
+ cast,
+ movieLink: "",
+ type: "movie",
+ createdAt: Date.now(),
+ };
+ await set(push(ref(db, "movies")), movieData);
+ toast.success(`âœ… "${data.title}" auto-imported as Movie!`);
+ }
+ } catch (err: any) {
+ toast.error("Import failed: " + err.message);
+ }
+ setImportingId(null);
+ };
+
+ return (
+ <div>
+ {/* Settings Card */}
+ <div className={`${glassCard} p-4 mb-4`}>
+ <h3 className="text-sm font-semibold mb-3.5 flex items-center gap-2">
+ <Zap size={14} className="text-yellow-500" /> Auto Import Settings
+ </h3>
+ <p className="text-[11px] text-[#D1C4E9] mb-4">
+ TMDB Browse anime and auto-import to the database with one clickà¥¤ video link after manually à¦¡ to do will beà¥¤
+ </p>
+ <div className="grid grid-cols-2 gap-3 mb-3">
+ <div>
+ <label className="text-[11px] text-[#957DAD] mb-1 block">Language</label>
+ <select value={importLanguage} onChange={e => setImportLanguage(e.target.value)} className={selectClass}>
+ {languageOptions.map(l => <option key={l} value={l}>{l}</option>)}
+ </select>
+ </div>
+ <div>
+ <label className="text-[11px] text-[#957DAD] mb-1 block">Category <span className="text-red-400">*</span></label>
+ <select value={importCategory} onChange={e => setImportCategory(e.target.value)} className={selectClass}>
+ <option value="">Select</option>
+ {categoryList.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+ </select>
+ </div>
+ </div>
+ </div>
+
+ {/* Browse Type Tabs */}
+ <div className="flex gap-2 overflow-x-auto pb-2.5 mb-4 scrollbar-hide">
+ {Object.entries(browseLabels).map(([key, label]) => (
+ <button key={key} onClick={() => setBrowseType(key as any)}
+ className={`flex-shrink-0 px-4 py-2 rounded-full text-[12px] font-medium transition-all ${
+ browseType === key
+ ? "bg-gradient-to-r from-purple-500 to-purple-800 text-white shadow-[0_4px_15px_rgba(157,78,221,0.4)]"
+ : "bg-[#151521] border border-white/10 text-[#D1C4E9]"
+ }`}>
+ {label}
+ </button>
+ ))}
+ </div>
+
+ {/* Results Grid */}
+ {browseLoading && browseResults.length === 0 ? (
+ <div className="flex justify-center py-12">
+ <div className="w-10 h-10 border-4 border-[#151521] border-t-purple-500 rounded-full animate-spin" />
+ </div>
+ ) : (
+ <>
+ <div className="grid grid-cols-3 gap-3">
+ {browseResults.map(item => {
+ const added = isAlreadyAdded(item.id);
+ const importing = importingId === item.id;
+ return (
+ <div key={item.id} className={`relative rounded-xl overflow-hidden border-2 transition-all ${
+ added ? "border-green-500/50 opacity-60" : "border-transparent hover:border-purple-500"
+ }`}>
+ <img
+ src={item.poster_path ? TMDB_IMG_BASE + "w342" + item.poster_path : ""}
+ className="w-full aspect-[2/3] object-cover"
+ onError={e => { (e.target as HTMLImageElement).src = "https://via.placeholder.com/200x300/1A1A2E/9D4EDD?text=No+Image"; }}
+ />
+ <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent" />
+ 
+ {added && (
+ <div className="absolute top-2 right-2 bg-green-500 text-white text-[9px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+ <Check size={10} /> Added
+ </div>
+ )}
+
+ {item.vote_average > 0 && (
+ <div className="absolute top-2 left-2 bg-yellow-500/90 text-black text-[10px] font-bold px-1.5 py-0.5 rounded">
+ â­ {item.vote_average?.toFixed(1)}
+ </div>
+ )}
+
+ <div className="absolute bottom-0 left-0 right-0 p-2">
+ <p className="text-[11px] font-semibold leading-tight line-clamp-2 mb-1.5">
+ {item.name || item.title}
+ </p>
+ <p className="text-[9px] text-[#D1C4E9] mb-2">
+ {(item.first_air_date || item.release_date || "").split("-")[0] || "N/A"}
+ </p>
+ 
+ {!added && (
+ <button
+ onClick={() => autoImportItem(item)}
+ disabled={importing || !importCategory}
+ className={`w-full py-1.5 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 transition-all ${
+ importing
+ ? "bg-purple-500/30 text-purple-300 cursor-wait"
+ : !importCategory
+ ? "bg-gray-500/30 text-gray-400 cursor-not-allowed"
+ : "bg-gradient-to-r from-purple-600 to-purple-800 text-white hover:shadow-[0_2px_10px_rgba(157,78,221,0.5)]"
+ }`}
+ >
+ {importing ? (
+ <><RefreshCw size={10} className="animate-spin" /> Importing...</>
+ ) : (
+ <><Download size={10} /> Auto Import</>
+ )}
+ </button>
+ )}
+ </div>
+ </div>
+ );
+ })}
+ </div>
+
+ {/* Load More */}
+ <div className="flex justify-center mt-5 mb-4">
+ <button
+ onClick={() => fetchBrowse(browsePage + 1)}
+ disabled={browseLoading}
+ className={`${btnPrimary} px-8 py-3 text-sm flex items-center gap-2`}
+ >
+ {browseLoading ? <RefreshCw size={14} className="animate-spin" /> : <ChevronDown size={14} />}
+ Load More
+ </button>
+ </div>
+ </>
+ )}
+ </div>
+ );
+};
+
+
+// Device Limit Input with local state for live UI update
+const DeviceLimitInput = ({ currentValue, userId, onUpdate }: { currentValue: number; userId: string; onUpdate: (userId: string, v: number) => void }) => {
+ const [val, setVal] = useState(String(currentValue));
+ useEffect(() => { setVal(String(currentValue)); }, [currentValue]);
+ return (
+ <input
+ type="number"
+ min="1"
+ max="1000"
+ value={val}
+ onClick={(e) => e.stopPropagation()}
+ onChange={(e) => {
+ e.stopPropagation();
+ setVal(e.target.value);
+ const v = parseInt(e.target.value);
+ if (v > 0) onUpdate(userId, v);
+ }}
+ className="w-14 h-7 rounded-lg text-[11px] font-bold text-center bg-white/5 text-zinc-300 border border-white/10 focus:border-yellow-500 outline-none"
+ />
+ );
+};
+
+// Device Limits Section
+const DeviceLimitsSection = ({ glassCard, inputClass, btnPrimary, btnSecondary, usersData, formatTime }: {
+ glassCard: string; inputClass: string; btnPrimary: string; btnSecondary: string; usersData: any[]; formatTime: (ts: number) => string;
+}) => {
+ const [premiumUsers, setPremiumUsers] = useState<any[]>([]);
+ const [expandedUser, setExpandedUser] = useState<string | null>(null);
+ const [userDevices, setUserDevices] = useState<Record<string, any[]>>({});
+ const [loadingDevices, setLoadingDevices] = useState<string | null>(null);
+ const [searchQuery, setSearchQuery] = useState("");
+ const deferredSearchQuery = useDeferredValue(searchQuery);
+ const [editingExpiry, setEditingExpiry] = useState<string | null>(null);
+ const [expiryDaysInput, setExpiryDaysInput] = useState("");
+
+ const [appUsersMap, setAppUsersMap] = useState<Record<string, any>>({});
+
+ useEffect(() => {
+ const pUsers = usersData.filter(u => u.premium?.active && u.premium?.expiresAt > Date.now());
+ startTransition(() => setPremiumUsers(pUsers));
+ }, [usersData]);
+
+ // Load appUsers to get names/emails/photos for users whose data might be stored with comma keys
+ useEffect(() => {
+ const unsub = onValue(query(ref(db, "appUsers"), limitToLast(1000)), (snap) => {
+ const data = snap.val() || {};
+ const map: Record<string, any> = {};
+ Object.values(data).forEach((u: any) => {
+ if (u.id) map[u.id] = u;
+ });
+ startTransition(() => setAppUsersMap(map));
+ });
+ return () => unsub();
+ }, []);
+
+ const loadDevices = async (userId: string) => {
+ if (expandedUser === userId) { setExpandedUser(null); return; }
+ startTransition(() => {
+ setExpandedUser(userId);
+ setLoadingDevices(userId);
+ });
+ try {
+ const { getUserDevices } = await import("@/lib/premiumDevice");
+ const devices = await getUserDevices(userId);
+ startTransition(() => setUserDevices(prev => ({ ...prev, [userId]: devices })));
+ } catch {}
+ setLoadingDevices(null);
+ };
+
+ const removeDeviceHandler = async (userId: string, deviceId: string) => {
+ if (!confirm("this device remove Continue?")) return;
+ try {
+ const { removeDevice: rmDev } = await import("@/lib/premiumDevice");
+ await rmDev(userId, deviceId);
+ setUserDevices(prev => ({ ...prev, [userId]: (prev[userId] || []).filter(d => d.id !== deviceId) }));
+ toast.success("device remove done");
+ } catch { toast.error("Error removing device"); }
+ };
+
+ const cancelSubscription = async (userId: string, userName: string) => {
+ if (!confirm(`"${userName}" Cancel this subscription? The device list will also be clearedà¥¤`)) return;
+ try {
+ await remove(ref(db, `users/${userId}/premium`));
+ setUserDevices(prev => { const copy = { ...prev }; delete copy[userId]; return copy; });
+ toast.success("subscription cancel and user à¦¨à§‹à¦«à¦¾this done");
+ } catch { toast.error("Error cancelling"); }
+ };
+
+ const setDeviceAsOnly = async (userId: string, allowedDeviceId: string) => {
+ if (!confirm("Grant access only to this device? All remaining devices will be removedà¥¤")) return;
+ try {
+ const devices = userDevices[userId] || [];
+ for (const dev of devices) {
+ if (dev.id !== allowedDeviceId) {
+ await remove(ref(db, `users/${userId}/premium/devices/${dev.id}`));
+ }
+ }
+ setUserDevices(prev => ({
+ ...prev,
+ [userId]: (prev[userId] || []).filter(d => d.id === allowedDeviceId),
+ }));
+ toast.success("onlyà¦®à¦¾à¦¤à§à¦° à¦¨à¦¿à¦°à§orà¦šà¦¿à¦¤ deviceà§‡ access done");
+ } catch { toast.error("Error updating devices"); }
+ };
+
+ const updateMaxDevices = async (userId: string, maxDevices: number) => {
+ try {
+ await update(ref(db, `users/${userId}/premium`), { maxDevices });
+ toast.success(`device limit ${maxDevices} update done`);
+ } catch { toast.error("Error updating"); }
+ };
+
+ const updateExpiryDays = async (userId: string) => {
+ const days = parseInt(expiryDaysInput);
+ if (isNaN(days) || days < 0) { toast.error("valid day count day"); return; }
+ try {
+ const newExpiry = Date.now() + days * 86400000;
+ await update(ref(db, `users/${userId}/premium`), { expiresAt: newExpiry });
+ toast.success(`premium ${days} dayà§‡ update done`);
+ setEditingExpiry(null);
+ setExpiryDaysInput("");
+ } catch { toast.error("Error updating expiry"); }
+ };
+
+ const filteredPremiumUsers = useMemo(() => {
+ const q = deferredSearchQuery.trim().toLowerCase();
+ if (!q) return premiumUsers;
+ return premiumUsers.filter(u =>
+ (u.name || "").toLowerCase().includes(q) ||
+ (u.email || "").toLowerCase().includes(q) ||
+ String(u.id || "").toLowerCase().includes(q)
+ );
+ }, [premiumUsers, deferredSearchQuery]);
+ const visiblePremiumUsers = useMemo(() => filteredPremiumUsers.slice(0, 120), [filteredPremiumUsers]);
+
+ return (
+ <div>
+ <div className={`${glassCard} p-4 mb-4`}>
+ <h3 className="text-sm font-semibold mb-3.5 flex items-center gap-2">
+ <Lock size={14} className="text-yellow-500" /> Premium Device Limits ({premiumUsers.length} active)
+ </h3>
+ <p className="text-[11px] text-[#D1C4E9] mb-4">
+ premium userà¦¦ device limit manage à¥¤ Grant access to specific devices, block the rest, or cancel the subscriptionà¥¤
+ </p>
+
+ {premiumUsers.length > 0 && (
+ <div className="relative mb-3">
+ <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-yellow-500" />
+ <input
+ value={searchQuery}
+ onChange={e => setSearchQuery(e.target.value)}
+ className={`${inputClass} pl-9`}
+ placeholder="user search (name, email)..."
+ />
+ </div>
+ )}
+
+ {filteredPremiumUsers.length === 0 ? (
+ <p className="text-[#957DAD] text-[13px] text-center py-8">
+ {searchQuery ? "any user à¦ªà¦¾ à¦¯à¦¾à¦¯à¦¼à¦¨à¦¿" : "any premium user none"}
+ </p>
+ ) : (
+ <div className="space-y-2.5">
+ {filteredPremiumUsers.length > visiblePremiumUsers.length && (
+ <div className="mb-2 rounded-lg border border-yellow-500/20 bg-yellow-500/10 px-3 py-2 text-[11px] text-yellow-200">
+ Showing first {visiblePremiumUsers.length} of {filteredPremiumUsers.length}. Search to narrow results.
+ </div>
+ )}
+ {visiblePremiumUsers.map(rawUser => {
+ // Merge with appUsers data for better name/email/photo
+ const appData = appUsersMap[rawUser.id] || {};
+ const user = {
+ ...rawUser,
+ name: rawUser.name || appData.name || rawUser.email?.split("@")[0] || "",
+ email: rawUser.email || appData.email || "",
+ photoURL: rawUser.photoURL || appData.photoURL || appData.photo || "",
+ };
+ const prem = user.premium || {};
+ const devices = prem.devices ? Object.keys(prem.devices).length : 0;
+ const maxDev = prem.maxDevices || 1;
+ const daysLeft = Math.max(0, Math.ceil((prem.expiresAt - Date.now()) / 86400000));
+ const isExpanded = expandedUser === user.id;
+
+ return (
+ <div key={user.id} className={`rounded-xl border transition-colors ${isExpanded ? "bg-yellow-500/5 border-yellow-500/30" : "bg-[#1A1A2E] border-white/5"}`}>
+ <div className="p-3 cursor-pointer" onClick={() => loadDevices(user.id)}>
+ <div className="flex justify-between items-start">
+ <div className="flex items-center gap-2 flex-1 min-w-0">
+ {user.photoURL || user.photo ? (
+ <CachedImg src={user.photoURL || user.photo} alt="" className="w-8 h-8 rounded-full object-cover flex-shrink-0" loading="lazy" decoding="async" />
+ ) : (
+ <div className="w-8 h-8 rounded-full bg-yellow-500/20 flex items-center justify-center flex-shrink-0 text-[11px] font-bold text-yellow-400">
+ {(user.name || user.email || "?").charAt(0).toUpperCase()}
+ </div>
+ )}
+ <div className="min-w-0">
+ <p className="text-sm font-semibold truncate">{user.name || user.email || "Unknown User"}</p>
+ <p className="text-[10px] text-zinc-400 truncate">{user.email || ""}</p>
+ </div>
+ </div>
+ <div className="text-right flex-shrink-0 ml-2">
+ <div className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${devices >= maxDev ? "bg-red-500/20 text-red-400" : "bg-green-500/20 text-green-400"}`}>
+ ğŸ“± {devices}/{maxDev}
+ </div>
+ </div>
+ </div>
+ {/* Prominent days remaining */}
+ <div className="flex items-center gap-3 mt-2">
+ <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold ${
+ daysLeft <= 3 ? "bg-red-500/20 text-red-400" : daysLeft <= 7 ? "bg-yellow-500/20 text-yellow-400" : "bg-green-500/20 text-green-400"
+ }`}>
+ â³ {daysLeft} day remaining
+ </div>
+ <span className="text-[9px] text-zinc-500">{prem.method || "redeem"} â€¢ {new Date(prem.expiresAt).toLocaleDateString("bn-BD")}</span>
+ <ChevronDown size={12} className={`text-zinc-500 transition-transform ml-auto ${isExpanded ? "rotate-180" : ""}`} />
+ </div>
+ <div className="flex items-center gap-2 mt-1.5">
+ <div className="flex-1 h-1.5 rounded-full bg-white/5 overflow-hidden">
+ <div className={`h-full rounded-full transition-all ${devices >= maxDev ? "bg-red-500" : "bg-yellow-500"}`} style={{ width: `${Math.min(100, (devices / maxDev) * 100)}%` }} />
+ </div>
+ </div>
+ </div>
+
+ {isExpanded && (
+ <div className="px-3 pb-3 border-t border-white/5 pt-2">
+ {loadingDevices === user.id ? (
+ <div className="text-center py-3"><div className="w-5 h-5 border-2 border-zinc-700 border-t-yellow-500 rounded-full animate-spin mx-auto" /></div>
+ ) : (
+ <>
+ {/* Expiry Edit */}
+ <div className="mb-3 bg-black/20 rounded-lg p-2">
+ <div className="flex items-center justify-between mb-1.5">
+ <span className="text-[10px] text-zinc-400 font-semibold">â³ premium à¦®à§‡à¦¯à¦¼à¦¾à¦¦: {daysLeft} day remaining</span>
+ <button 
+ onClick={(e) => { e.stopPropagation(); setEditingExpiry(editingExpiry === user.id ? null : user.id); setExpiryDaysInput(String(daysLeft)); }}
+ className="text-[10px] text-yellow-400 hover:text-yellow-300 font-semibold"
+ >
+ {editingExpiry === user.id ? "cancel" : "âœï¸ à¦¡à¦¿à¦Ÿ"}
+ </button>
+ </div>
+ {editingExpiry === user.id && (
+ <div className="flex items-center gap-2 mt-1.5">
+ <input
+ type="number"
+ value={expiryDaysInput}
+ onChange={e => setExpiryDaysInput(e.target.value)}
+ onClick={e => e.stopPropagation()}
+ className={`${inputClass} !py-1.5 flex-1`}
+ placeholder="day count..."
+ min="0"
+ />
+ <span className="text-[10px] text-zinc-500">day</span>
+ <button
+ onClick={(e) => { e.stopPropagation(); updateExpiryDays(user.id); }}
+ className="px-3 py-1.5 rounded-lg bg-yellow-500/20 text-yellow-400 text-[10px] font-bold hover:bg-yellow-500/40 transition-colors"
+ >
+ save
+ </button>
+ </div>
+ )}
+ </div>
+
+ {/* Device Limit Control */}
+ <div className="flex items-center gap-2 mb-3 bg-black/20 rounded-lg p-2">
+ <span className="text-[10px] text-zinc-400 flex-shrink-0">Max Devices:</span>
+ <div className="flex gap-1 items-center">
+ {[1, 2, 3, 5, 10].map(n => (
+ <button key={n} onClick={(e) => { e.stopPropagation(); updateMaxDevices(user.id, n); }}
+ className={`w-7 h-7 rounded-lg text-[11px] font-bold transition-colors ${
+ maxDev === n ? "bg-yellow-500 text-black" : "bg-white/5 text-zinc-400 hover:bg-white/10"
+ }`}>{n}</button>
+ ))}
+ <DeviceLimitInput currentValue={maxDev} userId={user.id} onUpdate={updateMaxDevices} />
+ </div>
+ </div>
+
+ <p className="text-[10px] text-zinc-400 mb-2 font-semibold">à¦°à§‡à¦œà¦¿à¦¸à§à¦°à§à¦¡ device ({(userDevices[user.id] || []).length}):</p>
+ {(userDevices[user.id] || []).length === 0 ? (
+ <p className="text-[10px] text-zinc-500 text-center py-2">any device à¦°à§‡à¦œà¦¿à¦¸à§à¦°à§à¦¡ none</p>
+ ) : (
+ <div className="space-y-1.5 mb-3">
+ {(userDevices[user.id] || []).map((dev, idx) => (
+ <div key={dev.id} className="flex items-center gap-2 bg-black/20 rounded-lg p-2.5">
+ <span className="text-lg">{dev.type === "mobile" ? "ğŸ“±" : dev.type === "tablet" ? "ğŸ“‹" : "ğŸ’»"}</span>
+ <div className="flex-1 min-w-0">
+ <p className="text-[11px] font-medium truncate">{dev.name}</p>
+ <p className="text-[9px] text-zinc-500">
+ {idx === 0 ? "ğŸ¥‡ First Device" : `#${idx + 1}`} â€¢ Last: {formatTime(dev.lastSeen)}
+ </p>
+ <p className="text-[8px] text-zinc-600 font-mono truncate">{dev.id}</p>
+ </div>
+ <div className="flex gap-1 flex-shrink-0">
+ <button onClick={(e) => { e.stopPropagation(); setDeviceAsOnly(user.id, dev.id); }}
+ title="only this deviceà§‡ access day"
+ className="bg-green-500/20 text-green-400 p-1.5 rounded-lg hover:bg-green-500/40 transition-colors">
+ <Check size={12} />
+ </button>
+ <button onClick={(e) => { e.stopPropagation(); removeDeviceHandler(user.id, dev.id); }}
+ title="this device remove "
+ className="bg-red-500/20 text-red-400 p-1.5 rounded-lg hover:bg-red-500/40 transition-colors">
+ <Trash2 size={12} />
+ </button>
+ </div>
+ </div>
+ ))}
+ </div>
+ )}
+
+ {/* Action buttons */}
+ <div className="flex gap-2">
+ <button onClick={(e) => { e.stopPropagation(); cancelSubscription(user.id, user.name || user.id); }}
+ className="flex-1 py-2 rounded-lg bg-red-500/20 border border-red-500/30 text-red-400 text-[10px] font-semibold hover:bg-red-500/40 transition-colors flex items-center justify-center gap-1">
+ <X size={11} /> subscription cancel
+ </button>
+ <button onClick={(e) => {
+ e.stopPropagation();
+ if (!confirm("all device remove Continue?")) return;
+ const devices = userDevices[user.id] || [];
+ Promise.all(devices.map(d => remove(ref(db, `users/${user.id}/premium/devices/${d.id}`))))
+ .then(() => {
+ setUserDevices(prev => ({ ...prev, [user.id]: [] }));
+ toast.success("all device remove done");
+ }).catch(() => toast.error("Error"));
+ }}
+ className="flex-1 py-2 rounded-lg bg-yellow-500/20 border border-yellow-500/30 text-yellow-400 text-[10px] font-semibold hover:bg-yellow-500/40 transition-colors flex items-center justify-center gap-1">
+ <Trash2 size={11} /> all device clear
+ </button>
+ </div>
+ </>
+ )}
+ </div>
+ )}
+ </div>
+ );
+ })}
+ </div>
+ )}
+ </div>
+ </div>
+ );
+};
+
+// Admin Authorized Emails sub-component
+const AdminAuthorizedEmails = ({ glassCard, inputClass, btnPrimary, btnSecondary }: { glassCard: string; inputClass: string; btnPrimary: string; btnSecondary: string }) => {
+ const [emails, setEmails] = useState<Record<string, string>>({});
+ const [newEmail, setNewEmail] = useState("");
+
+ useEffect(() => {
+ const unsub = onValue(ref(db, "admin/authorizedEmails"), (snap) => {
+ setEmails(snap.val() || {});
+ });
+ return () => unsub();
+ }, []);
+
+ const addEmail = async () => {
+ if (!newEmail.trim() || !newEmail.includes("@")) { toast.error("valid email day"); return; }
+ const key = push(ref(db, "admin/authorizedEmails")).key;
+ if (!key) return;
+ await set(ref(db, `admin/authorizedEmails/${key}`), newEmail.trim());
+ setNewEmail("");
+ toast.success("email add done!");
+ };
+
+ const removeEmail = async (key: string) => {
+ await remove(ref(db, `admin/authorizedEmails/${key}`));
+ toast.success("email à¦®à§à¦›à§‡ à¦«à§‡à¦²à¦¾ done");
+ };
+
+ return (
+ <div>
+ <div className="flex gap-2 mb-3">
+ <input value={newEmail} onChange={e => setNewEmail(e.target.value)} className={`${inputClass} flex-1`}
+ placeholder="admin@gmail.com" onKeyDown={e => e.key === "Enter" && addEmail()} />
+ <button onClick={addEmail} className={`${btnPrimary} !px-4`}>
+ <Plus size={14} /> Add
+ </button>
+ </div>
+ {Object.entries(emails).length === 0 ? (
+ <p className="text-[11px] text-zinc-500 text-center py-3">any Google email add à¦• not done</p>
+ ) : (
+ <div className="space-y-2">
+ {Object.entries(emails).map(([key, email]) => (
+ <div key={key} className="flex items-center justify-between bg-[#141422] border border-white/6 rounded-lg px-3 py-2">
+ <span className="text-[12px] text-zinc-300 truncate">{email}</span>
+ <button onClick={() => removeEmail(key)} className="text-red-400 hover:text-red-300 ml-2 flex-shrink-0">
+ <Trash2 size={12} />
+ </button>
+ </div>
+ ))}
+ </div>
+ )}
+ </div>
+ );
+};
+
+// CDN Toggle sub-component
+const CdnToggle = ({ glassCard }: { glassCard: string }) => {
+ const [cdnEnabled, setCdnEnabled] = useState(true);
+ const [loading, setLoading] = useState(true);
+
+ useEffect(() => {
+ const unsub = onValue(ref(db, "settings/cdnEnabled"), (snap) => {
+ const val = snap.val();
+ setCdnEnabled(val !== false); // default true
+ setLoading(false);
+ });
+ return () => unsub();
+ }, []);
+
+ const toggle = async () => {
+ const newVal = !cdnEnabled;
+ try {
+ await set(ref(db, "settings/cdnEnabled"), newVal);
+ setCdnEnabled(newVal);
+ toast.success(newVal ? "Cloudflare CDN on done" : "Cloudflare CDN off done");
+ } catch {
+ toast.error("Save failed");
+ }
+ };
+
+ return (
+ <div className="flex items-center justify-between">
+ <div className="flex items-center gap-3">
+ <div className={`w-3 h-3 rounded-full ${cdnEnabled ? 'bg-green-500' : 'bg-red-500'}`} />
+ <span className="text-sm font-medium">{cdnEnabled ? 'CDN on exists' : 'CDN off exists'}</span>
+ </div>
+ <button
+ onClick={toggle}
+ disabled={loading}
+ className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors ${cdnEnabled ? 'bg-green-600' : 'bg-zinc-600'}`}
+ >
+ <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${cdnEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
+ </button>
+ </div>
+ );
+};
+
+// Proxy URL builder helper
+const buildProxyTestUrl = (proxyBase: string, testUrl: string, apiKey?: string): string => {
+ if (!proxyBase) return testUrl;
+ const encoded = encodeURIComponent(testUrl);
+ const opaque = encodeURIComponent(toOpaqueUrlToken(testUrl));
+ let url: string;
+ if (proxyBase.includes('{url}')) url = proxyBase.split('{url}').join(encoded);
+ else url = `${proxyBase.replace(/\/$/, '')}?src=${opaque}`;
+ if (apiKey) url += (url.includes('?') ? '&' : '?') + `apikey=${encodeURIComponent(apiKey)}`;
+ return url;
+};
+
+// Proxy Server presets - only range-safe proxies for reliable seek/skip
+const PROXY_SERVERS = [
+ { id: 'supabase', name: 'Built-in Proxy (Default)', region: 'ğŸŒ Auto Region â€¢ Range âœ“', url: '' },
+];
+
+// Proxy Server Selector sub-component
+const ProxyServerSelector = ({ glassCard }: { glassCard: string }) => {
+ const [activeProxy, setActiveProxy] = useState('supabase');
+ const [customProxies, setCustomProxies] = useState<{ id: string; name: string; url: string; apiKey?: string }[]>([]);
+ const [newProxyName, setNewProxyName] = useState('');
+ const [newProxyUrl, setNewProxyUrl] = useState('');
+ const [newProxyApiKey, setNewProxyApiKey] = useState('');
+ const [loading, setLoading] = useState(true);
+ const [testing, setTesting] = useState<string | null>(null);
+ const [testResults, setTestResults] = useState<Record<string, { speed: number; status: 'ok' | 'fail' }>>({});
+ const [showAddForm, setShowAddForm] = useState(false);
+
+ useEffect(() => {
+ const unsub1 = onValue(ref(db, "settings/proxyServer"), (snap) => {
+ const val = snap.val();
+ const incomingId = val?.id || 'supabase';
+ setActiveProxy(incomingId);
+ setLoading(false);
+ });
+ const unsub2 = onValue(ref(db, "settings/customProxies"), (snap) => {
+ const val = snap.val();
+ if (val) {
+ const list = Object.entries(val).map(([key, v]: any) => ({ id: key, name: v.name, url: v.url, apiKey: v.apiKey || '' }));
+ setCustomProxies(list);
+ } else {
+ setCustomProxies([]);
+ }
+ });
+ return () => { unsub1(); unsub2(); };
+ }, []);
+
+ const allProxies = [...PROXY_SERVERS, ...customProxies.map(c => ({ ...c, region: 'âš™ï¸ Custom' }))];
+
+ const selectProxy = async (id: string) => {
+ try {
+ const proxy = allProxies.find(p => p.id === id);
+ const url = proxy && 'url' in proxy ? proxy.url : '';
+ const apiKey = proxy && 'apiKey' in proxy ? (proxy as any).apiKey : '';
+ await set(ref(db, "settings/proxyServer"), { id, url: url || null, apiKey: apiKey || null });
+ setActiveProxy(id);
+ toast.success(`à¦ªà§à¦°à¦•à§à¦¸à¦¿: ${proxy?.name || id}`);
+ } catch {
+ toast.error("Save failed");
+ }
+ };
+
+ const addCustomProxy = async () => {
+ if (!newProxyName.trim() || !newProxyUrl.trim()) { toast.error("name and URL à¦¦à¦¾ and"); return; }
+ try {
+ const id = `custom_${Date.now()}`;
+ await set(ref(db, `settings/customProxies/${id}`), {
+ name: newProxyName.trim(),
+ url: newProxyUrl.trim(),
+ apiKey: newProxyApiKey.trim() || null,
+ });
+ setNewProxyName('');
+ setNewProxyUrl('');
+ setNewProxyApiKey('');
+ setShowAddForm(false);
+ toast.success("custom à¦ªà§à¦°à¦•à§à¦¸à¦¿ add done");
+ } catch {
+ toast.error("Save failed");
+ }
+ };
+
+ const removeCustomProxy = async (id: string) => {
+ try {
+ await remove(ref(db, `settings/customProxies/${id}`));
+ if (activeProxy === id) {
+ await set(ref(db, "settings/proxyServer"), { id: 'supabase', url: null, apiKey: null });
+ setActiveProxy('supabase');
+ }
+ toast.success("à¦ªà§à¦°à¦•à§à¦¸à¦¿ à¦®à§à¦›à§‡ à¦«à§‡à¦²à¦¾ done");
+ } catch {
+ toast.error("à¦®à§à¦›à¦¤à§‡ failed");
+ }
+ };
+
+ const testProxy = async (proxy: { id: string; url: string; apiKey?: string }) => {
+ setTesting(proxy.id);
+ const testVideoUrl = 'https://www.google.com/favicon.ico';
+ const start = performance.now();
+ try {
+ let fetchUrl = buildProxyTestUrl(proxy.url, testVideoUrl, proxy.apiKey);
+ const res = await fetch(fetchUrl, { method: 'GET', signal: AbortSignal.timeout(10000) });
+ const elapsed = Math.round(performance.now() - start);
+ setTestResults(prev => ({ ...prev, [proxy.id]: { speed: elapsed, status: res.ok ? 'ok' : 'fail' } }));
+ } catch {
+ const elapsed = Math.round(performance.now() - start);
+ setTestResults(prev => ({ ...prev, [proxy.id]: { speed: elapsed, status: 'fail' } }));
+ }
+ setTesting(null);
+ };
+
+ if (loading) return <div className="text-xs text-zinc-500">load in progress...</div>;
+
+ return (
+ <div className="space-y-2">
+ {allProxies.map(proxy => (
+ <div
+ key={proxy.id}
+ className={`flex items-center justify-between p-2.5 rounded-lg border transition-all cursor-pointer ${
+ activeProxy === proxy.id
+ ? 'border-cyan-500/50 bg-cyan-500/10'
+ : 'border-zinc-700/50 bg-zinc-800/30 hover:border-zinc-600'
+ }`}
+ onClick={() => selectProxy(proxy.id)}
+ >
+ <div className="flex items-center gap-2.5 flex-1 min-w-0">
+ <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${activeProxy === proxy.id ? 'bg-cyan-400' : 'bg-zinc-600'}`} />
+ <div className="min-w-0">
+ <div className="text-xs font-medium truncate">{proxy.name}</div>
+ <div className="text-[10px] text-zinc-500">{'region' in proxy ? (proxy as any).region : 'âš™ï¸ Custom'}</div>
+ {'apiKey' in proxy && (proxy as any).apiKey && (
+ <div className="text-[9px] text-yellow-500/70 mt-0.5">ğŸ”‘ API Key set exists</div>
+ )}
+ </div>
+ </div>
+ <div className="flex items-center gap-1.5 flex-shrink-0">
+ {testResults[proxy.id] && (
+ <span className={`text-[10px] font-mono ${testResults[proxy.id].status === 'ok' ? 'text-green-400' : 'text-red-400'}`}>
+ {testResults[proxy.id].status === 'ok' ? `${testResults[proxy.id].speed}ms` : 'failed'}
+ </span>
+ )}
+ {proxy.id.startsWith('custom_') && (
+ <button
+ onClick={(e) => { e.stopPropagation(); removeCustomProxy(proxy.id); }}
+ className="p-1 text-red-400 hover:text-red-300"
+ >
+ <Trash2 size={12} />
+ </button>
+ )}
+ <button
+ onClick={(e) => { e.stopPropagation(); testProxy(proxy as any); }}
+ disabled={testing === proxy.id}
+ className="px-2 py-1 text-[10px] rounded bg-zinc-700 hover:bg-zinc-600 transition-colors disabled:opacity-50"
+ >
+ {testing === proxy.id ? '...' : 'test'}
+ </button>
+ </div>
+ </div>
+ ))}
+
+ {/* Add custom proxy */}
+ {showAddForm ? (
+ <div className="p-3 rounded-lg border border-dashed border-zinc-600 space-y-2">
+ <input
+ type="text"
+ value={newProxyName}
+ onChange={e => setNewProxyName(e.target.value)}
+ placeholder="à¦ªà§à¦°à¦•à§à¦¸à¦¿ name (such as: My Supabase Proxy)"
+ className="w-full text-xs bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white placeholder-zinc-500 focus:border-cyan-500 outline-none"
+ />
+ <input
+ type="text"
+ value={newProxyUrl}
+ onChange={e => setNewProxyUrl(e.target.value)}
+  placeholder="à¦ªà§à¦°à¦•à§à¦¸à¦¿ URL (such as: https://xxx.workers.dev/video-proxy)"
+ className="w-full text-xs bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white placeholder-zinc-500 focus:border-cyan-500 outline-none"
+ />
+ <input
+ type="text"
+ value={newProxyApiKey}
+ onChange={e => setNewProxyApiKey(e.target.value)}
+ placeholder="ğŸ”‘ API Key (No à¦¥à¦¾à¦•à¦²à§‡ à¦–à¦¾à¦²à¦¿ à¦–à§‹)"
+ className="w-full text-xs bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white placeholder-zinc-500 focus:border-yellow-500 outline-none"
+ />
+ <p className="text-[10px] text-zinc-500 leading-relaxed">
+  âœ¨ Key à¦¥à¦¾à¦•à¦²à§‡: <code className="text-cyan-400">proxy?src=TOKEN&apikey=KEY</code><br/>
+  âœ¨ Key No à¦¥à¦¾à¦•à¦²à§‡: <code className="text-cyan-400">proxy?src=TOKEN</code>
+ </p>
+ <div className="flex gap-2">
+ <button onClick={addCustomProxy} className="flex-1 py-2 text-xs bg-cyan-600 hover:bg-cyan-500 rounded-lg transition-colors">
+ âœ… add 
+ </button>
+ <button onClick={() => { setShowAddForm(false); setNewProxyName(''); setNewProxyUrl(''); setNewProxyApiKey(''); }} className="px-3 py-2 text-xs bg-zinc-700 hover:bg-zinc-600 rounded-lg transition-colors">
+ cancel
+ </button>
+ </div>
+ </div>
+ ) : (
+ <button
+ onClick={() => setShowAddForm(true)}
+ className="w-full py-2 text-xs font-medium border border-dashed border-zinc-600 hover:border-cyan-500 rounded-lg transition-colors flex items-center justify-center gap-1.5"
+ >
+ <Plus size={12} /> custom à¦ªà§à¦°à¦•à§à¦¸à¦¿ add 
+ </button>
+ )}
+
+ {/* Test All */}
+ <button
+ onClick={async () => { for (const p of allProxies) { await testProxy(p as any); } }}
+ disabled={testing !== null}
+ className="w-full mt-2 py-2 text-xs font-medium bg-indigo-600 hover:bg-indigo-500 rounded-lg transition-colors disabled:opacity-50"
+ >
+ {testing ? 'test running...' : 'ğŸš€ all à¦ªà§à¦°à¦•à§à¦¸à¦¿ test '}
+ </button>
+ </div>
+ );
+};
+
+// Image Refresh Section - re-fetch all poster/backdrop from TMDB
+const ImageRefreshSection = ({
+ glassCard, btnPrimary, webseriesData, moviesData,
+}: {
+ glassCard: string; btnPrimary: string;
+ webseriesData: any[]; moviesData: any[];
+}) => {
+ const [refreshing, setRefreshing] = useState(false);
+ const [progress, setProgress] = useState({ current: 0, total: 0, currentTitle: "" });
+ const [errors, setErrors] = useState<string[]>([]);
+ const [successCount, setSuccessCount] = useState(0);
+ const [done, setDone] = useState(false);
+ const [mode, setMode] = useState<"rs" | "animesalt" | "all">("animesalt");
+ const [animesaltData, setAnimesaltData] = useState<Record<string, any>>({});
+
+ useEffect(() => {
+ const unsub = onValue(ref(db, 'animesaltSelected'), (snap) => {
+ setAnimesaltData(snap.val() || {});
+ });
+ return () => unsub();
+ }, []);
+
+ const asCount = Object.keys(animesaltData).length;
+ const rsCount = webseriesData.length + moviesData.length;
+
+ const startRefresh = async () => {
+ setRefreshing(true);
+ setErrors([]);
+ setSuccessCount(0);
+ setDone(false);
+
+ const allContent: { title: string; fbPath: string; searchType: string; source: string }[] = [];
+
+ if (mode === "rs" || mode === "all") {
+ webseriesData.forEach(w => allContent.push({ title: w.title, fbPath: `webseries/${w.id}`, searchType: "tv", source: "" }));
+ moviesData.forEach(m => allContent.push({ title: m.title, fbPath: `movies/${m.id}`, searchType: "movie", source: "" }));
+ }
+
+ if (mode === "animesalt" || mode === "all") {
+ Object.entries(animesaltData).forEach(([slug, item]: [string, any]) => {
+ allContent.push({
+ title: item.title || slug,
+ fbPath: `animesaltSelected/${slug}`,
+ searchType: item.type === "movies" ? "movie" : "tv",
+ source: "AS",
+ });
+ });
+ }
+
+ setProgress({ current: 0, total: allContent.length, currentTitle: "" });
+ const errorList: string[] = [];
+ let success = 0;
+
+ for (let i = 0; i < allContent.length; i++) {
+ const item = allContent[i];
+ setProgress({ current: i + 1, total: allContent.length, currentTitle: item.title });
+
+ try {
+ const searchRes = await fetch(
+ `${TMDB_BASE_URL}/search/${item.searchType}?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(item.title)}&language=en-US&page=1`
+ );
+ const searchData = await searchRes.json();
+ const result = searchData.results?.[0];
+
+ if (!result) {
+ errorList.push(`âŒ [${item.source}] ${item.title} â€” TMDB à¦¤à§‡ à¦ªà¦¾ à¦¯à¦¾à¦¯à¦¼à¦¨à¦¿`);
+ setErrors([...errorList]);
+ continue;
+ }
+
+ const poster = result.poster_path ? `https://image.tmdb.org/t/p/w500${result.poster_path}` : "";
+ const backdrop = result.backdrop_path ? `https://image.tmdb.org/t/p/w1280${result.backdrop_path}` : "";
+
+ const updates: Record<string, any> = {};
+ if (poster) updates.poster = poster;
+ if (backdrop) updates.backdrop = backdrop;
+
+ if (Object.keys(updates).length > 0) {
+ await update(ref(db, item.fbPath), updates);
+ success++;
+ setSuccessCount(success);
+ }
+
+ await new Promise(r => setTimeout(r, 300));
+ } catch (err: any) {
+ errorList.push(`âš ï¸ [${item.source}] ${item.title} â€” ${err.message || "Unknown error"}`);
+ setErrors([...errorList]);
+ }
+ }
+
+ setDone(true);
+ setRefreshing(false);
+ toast.success(`image refresh à¦¸à¦®à§à¦ªà¦¨à§à¦¨! ${success}/${allContent.length} update done`);
+ };
+
+ const pct = progress.total > 0 ? Math.round((progress.current / progress.total) * 100) : 0;
+ const totalCount = mode === "rs" ? rsCount : mode === "animesalt" ? asCount : rsCount + asCount;
+
+ return (
+ <div className={`${glassCard} p-4 mb-4`}>
+ <h3 className="text-sm font-semibold mb-3.5 flex items-center gap-2">
+ <RefreshCw size={14} className="text-emerald-400" /> image refresh (TMDB)
+ </h3>
+ <p className="text-[11px] text-zinc-400 mb-3">
+ Re-fetches Poster and Backdrop images for all content from TMDBà¥¤
+ </p>
+
+ {!refreshing && !done && (
+ <div className="space-y-3">
+ <div className="flex gap-2">
+ {(["animesalt", "rs", "all"] as const).map(m => (
+ <button key={m} onClick={() => setMode(m)}
+ className={`flex-1 py-2 text-xs font-semibold rounded-lg border transition-colors ${mode === m ? "bg-indigo-600 border-indigo-500 text-white" : "bg-[#141422] border-white/8 text-zinc-400 hover:text-white"}`}>
+ {m === "animesalt" ? `P2 (${asCount})` : m === "rs" ? `Primary (${rsCount})` : `all (${rsCount + asCount})`}
+ </button>
+ ))}
+ </div>
+ <button onClick={startRefresh} className={`${btnPrimary} w-full py-3 flex items-center justify-center gap-2 text-sm`}>
+ <RefreshCw size={16} /> Start Refresh ({totalCount} content)
+ </button>
+ </div>
+ )}
+
+ {refreshing && (
+ <div className="space-y-3">
+ <div className="flex items-center justify-between text-xs text-zinc-400">
+ <span>{progress.current}/{progress.total}</span>
+ <span>{pct}%</span>
+ </div>
+ <div className="w-full h-3 bg-[#141422] rounded-full overflow-hidden">
+ <div className="h-full bg-gradient-to-r from-emerald-500 to-cyan-400 rounded-full transition-all duration-300" style={{ width: `${pct}%` }} />
+ </div>
+ <p className="text-[11px] text-zinc-300 truncate">ğŸ”„ {progress.currentTitle}</p>
+ <p className="text-[10px] text-zinc-500 animate-pulse">â³ browser off à¦¨ No...</p>
+ </div>
+ )}
+
+ {done && (
+ <div className="space-y-3">
+ <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-3">
+ <p className="text-sm text-emerald-400 font-semibold flex items-center gap-2">
+ <Check size={16} /> à¦¸à¦®à§à¦ªà¦¨à§à¦¨! {successCount}/{progress.total} update done
+ </p>
+ </div>
+ <button onClick={() => { setDone(false); setErrors([]); }} className={`${btnPrimary} w-full py-2.5 text-sm flex items-center justify-center gap-2`}>
+ <RefreshCw size={14} /> again refresh 
+ </button>
+ </div>
+ )}
+
+ {errors.length > 0 && (
+ <div className="mt-3 bg-red-500/10 border border-red-500/20 rounded-lg p-3 max-h-[200px] overflow-y-auto">
+ <p className="text-xs text-red-400 font-semibold mb-2">âš ï¸ {errors.length} à¦¸à¦®à¦¸à§à¦¯à¦¾:</p>
+ {errors.map((err, i) => (
+ <p key={i} className="text-[11px] text-red-300/80 py-0.5">{err}</p>
+ ))}
+ </div>
+ )}
+ </div>
+ );
+};
+
+// Episode Name Refresh Section - fetch episode names from TMDB 
+const EpisodeNameRefreshSection = ({
+ glassCard, btnPrimary, webseriesData,
+}: {
+ glassCard: string; btnPrimary: string;
+ webseriesData: any[];
+}) => {
+ const [refreshing, setRefreshing] = useState(false);
+ const [progress, setProgress] = useState({ current: 0, total: 0, currentTitle: "" });
+ const [errors, setErrors] = useState<string[]>([]);
+ const [successCount, setSuccessCount] = useState(0);
+ const [done, setDone] = useState(false);
+ const [updatedEps, setUpdatedEps] = useState(0);
+ const [mode, setMode] = useState<"all" | "single">("all");
+ const [selectedId, setSelectedId] = useState("");
+ const [searchQuery, setSearchQuery] = useState("");
+
+ const filteredSeries = useMemo(() => {
+ if (!searchQuery.trim()) return webseriesData;
+ const q = searchQuery.toLowerCase();
+ return webseriesData.filter(w => w.title?.toLowerCase().includes(q));
+ }, [webseriesData, searchQuery]);
+
+ const startRefresh = async () => {
+ const targetList = mode === "single" && selectedId
+ ? webseriesData.filter(w => w.id === selectedId)
+ : webseriesData;
+
+ if (targetList.length === 0) { toast.error("content Select"); return; }
+
+ setRefreshing(true);
+ setErrors([]);
+ setSuccessCount(0);
+ setUpdatedEps(0);
+ setDone(false);
+
+ const total = targetList.length;
+ setProgress({ current: 0, total, currentTitle: "" });
+ const errorList: string[] = [];
+ let success = 0;
+ let totalEpsUpdated = 0;
+
+ for (let i = 0; i < targetList.length; i++) {
+ const ws = targetList[i];
+ setProgress({ current: i + 1, total, currentTitle: ws.title });
+
+ try {
+ const searchRes = await fetch(
+ `${TMDB_BASE_URL}/search/tv?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(ws.title)}&language=en-US&page=1`
+ );
+ const searchData = await searchRes.json();
+ const tmdbShow = searchData.results?.[0];
+
+ if (!tmdbShow) {
+ errorList.push(`âŒ ${ws.title} â€” TMDB à¦¤à§‡ à¦ªà¦¾ à¦¯à¦¾à¦¯à¦¼à¦¨à¦¿`);
+ setErrors([...errorList]);
+ continue;
+ }
+
+ const tmdbId = tmdbShow.id;
+ if (!ws.seasons) { continue; }
+
+ const seasonEntries = Object.entries(ws.seasons);
+ let seriesUpdated = false;
+
+ for (let sIdx = 0; sIdx < seasonEntries.length; sIdx++) {
+ const [seasonKey, seasonData] = seasonEntries[sIdx] as [string, any];
+ const seasonNum = seasonData.seasonNumber || sIdx + 1;
+
+ try {
+ const seasonRes = await fetch(
+ `${TMDB_BASE_URL}/tv/${tmdbId}/season/${seasonNum}?api_key=${TMDB_API_KEY}&language=en-US`
+ );
+ if (!seasonRes.ok) continue;
+ const tmdbSeason = await seasonRes.json();
+
+ if (!tmdbSeason.episodes || !seasonData.episodes) continue;
+
+ const epEntries = Object.entries(seasonData.episodes);
+ for (const [epKey, epData] of epEntries) {
+ const ep = epData as any;
+ const epNum = ep.episodeNumber || 0;
+ const tmdbEp = tmdbSeason.episodes.find((e: any) => e.episode_number === epNum);
+
+ if (tmdbEp && tmdbEp.name) {
+ const currentTitle = ep.title || "";
+ if (!currentTitle || currentTitle === `Episode ${epNum}` || currentTitle === ep.episodeNumber?.toString()) {
+ await update(ref(db, `webseries/${ws.id}/seasons/${seasonKey}/episodes/${epKey}`), {
+ title: tmdbEp.name,
+ });
+ totalEpsUpdated++;
+ setUpdatedEps(totalEpsUpdated);
+ seriesUpdated = true;
+ }
+ }
+ }
+
+ await new Promise(r => setTimeout(r, 250));
+ } catch {
+ // skip season errors silently
+ }
+ }
+
+ if (seriesUpdated) {
+ success++;
+ setSuccessCount(success);
+ }
+
+ await new Promise(r => setTimeout(r, 300));
+ } catch (err: any) {
+ errorList.push(`âš ï¸ ${ws.title} â€” ${err.message || "Unknown error"}`);
+ setErrors([...errorList]);
+ }
+ }
+
+ setDone(true);
+ setRefreshing(false);
+ toast.success(`episode name refresh à¦¸à¦®à§à¦ªà¦¨à§à¦¨! ${totalEpsUpdated} episode update done`);
+ };
+
+ const pct = progress.total > 0 ? Math.round((progress.current / progress.total) * 100) : 0;
+
+ return (
+ <div className={`${glassCard} p-4 mb-4`}>
+ <h3 className="text-sm font-semibold mb-3.5 flex items-center gap-2">
+ <List size={14} className="text-amber-400" /> episode name refresh (TMDB)
+ </h3>
+ <p className="text-[11px] text-zinc-400 mb-3">
+ andà¦¯à¦¼à§‡à¦¬series episode name TMDB from update à¥¤ only à¦–à¦¾à¦²à¦¿ or à¦œà§‡à¦¨à¦¿à¦• name update will beà¥¤
+ </p>
+
+ {!refreshing && !done && (
+ <div className="space-y-3">
+ {/* Mode selector */}
+ <div className="flex gap-2">
+ <button onClick={() => setMode("all")}
+ className={`flex-1 py-2 text-xs font-semibold rounded-lg border transition-colors ${mode === "all" ? "bg-amber-600 border-amber-500 text-white" : "bg-[#141422] border-white/8 text-zinc-400 hover:text-white"}`}>
+ All Series ({webseriesData.length})
+ </button>
+ <button onClick={() => setMode("single")}
+ className={`flex-1 py-2 text-xs font-semibold rounded-lg border transition-colors ${mode === "single" ? "bg-amber-600 border-amber-500 text-white" : "bg-[#141422] border-white/8 text-zinc-400 hover:text-white"}`}>
+ specific series
+ </button>
+ </div>
+
+ {/* Content selector for single mode */}
+ {mode === "single" && (
+ <div className="space-y-2">
+ <div className="relative">
+ <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
+ <input
+ value={searchQuery}
+ onChange={e => setSearchQuery(e.target.value)}
+ placeholder="series search ..."
+ className="w-full text-xs bg-zinc-800 border border-zinc-700 rounded-lg pl-8 pr-3 py-2.5 text-white placeholder-zinc-500 focus:border-amber-500 outline-none"
+ />
+ </div>
+ <div className="max-h-[200px] overflow-y-auto space-y-1 rounded-lg border border-zinc-700/50 p-1.5">
+ {filteredSeries.map(ws => (
+ <button
+ key={ws.id}
+ onClick={() => setSelectedId(ws.id)}
+ className={`w-full text-left px-3 py-2 rounded-lg text-xs transition-colors flex items-center gap-2 ${
+ selectedId === ws.id ? 'bg-amber-600/20 border border-amber-500/40 text-amber-300' : 'hover:bg-zinc-700/50 text-zinc-300'
+ }`}
+ >
+ {ws.poster && <CachedImg src={ws.poster} className="w-6 h-8 rounded object-cover flex-shrink-0" loading="lazy" decoding="async" />}
+ <span className="truncate">{ws.title}</span>
+ </button>
+ ))}
+ {filteredSeries.length === 0 && <p className="text-[11px] text-zinc-500 text-center py-3">any series à¦ªà¦¾ à¦¯à¦¾à¦¯à¦¼à¦¨à¦¿</p>}
+ </div>
+ </div>
+ )}
+
+ <button
+ onClick={startRefresh}
+ disabled={mode === "single" && !selectedId}
+ className={`${btnPrimary} w-full py-3 flex items-center justify-center gap-2 text-sm disabled:opacity-40`}
+ >
+ <RefreshCw size={16} /> Start Refresh ({mode === "single" ? (selectedId ? "1" : "Select") : `${webseriesData.length}`} series)
+ </button>
+ </div>
+ )}
+
+ {refreshing && (
+ <div className="space-y-3">
+ <div className="flex items-center justify-between text-xs text-zinc-400">
+ <span>{progress.current}/{progress.total} series</span>
+ <span>{pct}%</span>
+ </div>
+ <div className="w-full h-3 bg-[#141422] rounded-full overflow-hidden">
+ <div className="h-full bg-gradient-to-r from-amber-500 to-orange-400 rounded-full transition-all duration-300" style={{ width: `${pct}%` }} />
+ </div>
+ <p className="text-[11px] text-zinc-300 truncate">ğŸ”„ {progress.currentTitle}</p>
+ <p className="text-[10px] text-emerald-400">{updatedEps} episode update done</p>
+ <p className="text-[10px] text-zinc-500 animate-pulse">â³ browser off à¦¨ No...</p>
+ </div>
+ )}
+
+ {done && (
+ <div className="space-y-3">
+ <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3">
+ <p className="text-sm text-amber-400 font-semibold flex items-center gap-2">
+ <Check size={16} /> à¦¸à¦®à§à¦ªà¦¨à§à¦¨! {successCount} seriesà§‡ Total {updatedEps} episode update done
+ </p>
+ </div>
+ <button onClick={() => { setDone(false); setErrors([]); setSelectedId(""); }} className={`${btnPrimary} w-full py-2.5 text-sm flex items-center justify-center gap-2`}>
+ <RefreshCw size={14} /> again refresh 
+ </button>
+ </div>
+ )}
+
+ {errors.length > 0 && (
+ <div className="mt-3 bg-red-500/10 border border-red-500/20 rounded-lg p-3 max-h-[200px] overflow-y-auto">
+ <p className="text-xs text-red-400 font-semibold mb-2">âš ï¸ {errors.length} à¦¸à¦®à¦¸à§à¦¯à¦¾:</p>
+ {errors.map((err, i) => (
+ <p key={i} className="text-[11px] text-red-300/80 py-0.5">{err}</p>
+ ))}
+ </div>
+ )}
+ </div>
+ );
+};
+
+// Link Checker Section - real video playback validation with grouped results
+const LinkCheckerSection = ({
+ glassCard, btnPrimary, webseriesData, moviesData,
+}: {
+ glassCard: string; btnPrimary: string;
+ webseriesData: any[]; moviesData: any[];
+}) => {
+ const [checking, setChecking] = useState(false);
+ const [progress, setProgress] = useState({ current: 0, total: 0, currentTitle: "" });
+ const [brokenLinks, setBrokenLinks] = useState<{ contentTitle: string; contentId: string; contentType: 'webseries' | 'movies'; seasonKey?: string; seasonNum?: number; epKey?: string; epNum?: number; quality: string; qualityField: string; url: string; fbPath: string }[]>([]);
+ const [done, setDone] = useState(false);
+ const [mode, setMode] = useState<"all" | "single">("all");
+ const [selectedId, setSelectedId] = useState("");
+ const [searchQuery, setSearchQuery] = useState("");
+ const [deleting, setDeleting] = useState<Record<string, boolean>>({});
+ const [editingIdx, setEditingIdx] = useState<number | null>(null);
+ const [editUrl, setEditUrl] = useState("");
+ const [jsonMode, setJsonMode] = useState(false);
+ const [jsonInput, setJsonInput] = useState("");
+ const [expandedContent, setExpandedContent] = useState<Set<string>>(new Set());
+ const abortRef = useRef(false);
+ const [filterSeason, setFilterSeason] = useState<string>("all");
+ const [filterEpisode, setFilterEpisode] = useState<string>("all");
+
+ const allContent = useMemo(() => [
+ ...webseriesData.map(w => ({ ...w, _type: 'webseries' as const })),
+ ...moviesData.map(m => ({ ...m, _type: 'movies' as const })),
+ ], [webseriesData, moviesData]);
+
+ const filteredContent = useMemo(() => {
+ if (!searchQuery.trim()) return allContent;
+ const q = searchQuery.toLowerCase();
+ return allContent.filter(c => c.title?.toLowerCase().includes(q));
+ }, [allContent, searchQuery]);
+
+ // Get seasons/episodes for selected content (for filter)
+ const selectedContent = useMemo(() => allContent.find(c => c.id === selectedId), [allContent, selectedId]);
+ const selectedSeasons = useMemo(() => {
+ if (!selectedContent || selectedContent._type !== 'webseries' || !selectedContent.seasons) return [];
+ if (Array.isArray(selectedContent.seasons)) return selectedContent.seasons;
+ return Object.entries(selectedContent.seasons).map(([k, v]: [string, any]) => ({ ...v, _key: k }));
+ }, [selectedContent]);
+ const selectedSeasonEpisodes = useMemo(() => {
+ if (filterSeason === "all" || !selectedSeasons.length) return [];
+ const s = selectedSeasons[Number(filterSeason)];
+ if (!s?.episodes) return [];
+ if (Array.isArray(s.episodes)) return s.episodes;
+ return Object.entries(s.episodes).map(([k, v]: [string, any]) => ({ ...v, _key: k }));
+ }, [selectedSeasons, filterSeason]);
+
+ const qualityFields = ['link', 'link480', 'link720', 'link1080', 'link4k'] as const;
+ const qualityLabels: Record<string, string> = { link: 'Default', link480: '480p', link720: '720p', link1080: '1080p', link4k: '4K' };
+
+ const CLOUDFLARE_CDN = CLOUDFLARE_CDN_URL;
+ const [cdnEnabled, setCdnEnabled] = useState(true);
+ const [proxyUrl, setProxyUrl] = useState('');
+
+ useEffect(() => {
+ const unsub1 = onValue(ref(db, "settings/cdnEnabled"), (snap) => {
+ const val = snap.val();
+ setCdnEnabled(val !== false);
+ });
+ const unsub2 = onValue(ref(db, "settings/proxyServer"), (snap) => {
+ const val = snap.val();
+ setProxyUrl(val?.url || '');
+ });
+ return () => {
+ unsub1();
+ unsub2();
+ };
+ }, []);
+
+ const isRangeSafeProxy = (serverUrl?: string) => {
+ if (!serverUrl) return true;
+ return serverUrl.includes('/functions/v1/video-proxy') || serverUrl.includes('workers.dev');
+ };
+
+ const buildPlaybackCandidates = (url: string): string[] => {
+ if (!url) return [];
+ const encoded = encodeURIComponent(url);
+ const opaque = encodeURIComponent(toOpaqueUrlToken(url));
+ const candidates: string[] = [];
+ const addCandidate = (candidate?: string | null) => {
+ if (!candidate || candidates.includes(candidate)) return;
+ candidates.push(candidate);
+ };
+
+ const cloudflareCandidate = `${CLOUDFLARE_CDN}/video-proxy?src=${opaque}`;
+ const customProxyCandidate = proxyUrl && isRangeSafeProxy(proxyUrl)
+ ? (proxyUrl.includes('{url}')
+ ? proxyUrl.split('{url}').join(encoded)
+  : `${proxyUrl.replace(/\/$/, '')}?src=${opaque}`)
+ : null;
+
+ if (cdnEnabled) {
+ addCandidate(cloudflareCandidate);
+ return candidates;
+ }
+
+ if (url.startsWith('http://')) {
+ addCandidate(customProxyCandidate);
+ return candidates;
+ }
+
+ if (url.startsWith('https://')) {
+ addCandidate(customProxyCandidate);
+ addCandidate(url);
+ return candidates;
+ }
+
+ addCandidate(url);
+ return candidates;
+ };
+
+ const testPlayable = async (testUrl: string): Promise<boolean> => {
+ return await new Promise<boolean>((resolve) => {
+ const vid = document.createElement('video');
+ vid.preload = 'auto';
+ vid.muted = true;
+ vid.playsInline = true;
+ vid.style.position = 'fixed';
+ vid.style.left = '-9999px';
+ vid.style.width = '1px';
+ vid.style.height = '1px';
+ document.body?.appendChild(vid);
+
+ let done = false;
+ const timeout = setTimeout(() => cleanup(false), 14000);
+
+ const cleanup = (result: boolean) => {
+ if (done) return;
+ done = true;
+ clearTimeout(timeout);
+ vid.onloadedmetadata = null;
+ vid.oncanplay = null;
+ vid.onplaying = null;
+ vid.ontimeupdate = null;
+ vid.onerror = null;
+ try { vid.pause(); } catch {}
+ try { vid.removeAttribute('src'); vid.load(); } catch {}
+ try { vid.remove(); } catch {}
+ resolve(result);
+ };
+
+ const tryStart = () => {
+ const p = vid.play();
+ if (p && typeof p.then === 'function') p.catch(() => {});
+ };
+
+ vid.onloadedmetadata = tryStart;
+ vid.oncanplay = () => cleanup(true);
+ vid.onplaying = () => cleanup(true);
+ vid.ontimeupdate = () => {
+ if (vid.currentTime > 0.1) cleanup(true);
+ };
+ vid.onerror = () => cleanup(false);
+ vid.src = testUrl;
+ vid.load();
+ });
+ };
+
+ // Check link with same routing strategy as real player
+ const checkLink = async (url: string): Promise<boolean> => {
+ const candidates = buildPlaybackCandidates(url);
+ for (const candidate of candidates) {
+ const ok = await testPlayable(candidate);
+ if (ok) return true;
+ }
+ return false;
+ };
+
+ const startCheck = async () => {
+ const targetContent = mode === "single" && selectedId
+ ? allContent.filter(c => c.id === selectedId)
+ : allContent;
+
+ if (targetContent.length === 0) { toast.error("content Select"); return; }
+
+ abortRef.current = false;
+ setChecking(true);
+ setBrokenLinks([]);
+ setDone(false);
+ setExpandedContent(new Set());
+
+ const broken: typeof brokenLinks = [];
+ let totalLinks = 0;
+
+ // Helper: should we include this season/episode?
+ const shouldIncludeSeason = (sIdx: number) => {
+ if (mode !== "single" || filterSeason === "all") return true;
+ return sIdx === Number(filterSeason);
+ };
+ const shouldIncludeEpisode = (eIdx: number) => {
+ if (mode !== "single" || filterSeason === "all" || filterEpisode === "all") return true;
+ return eIdx === Number(filterEpisode);
+ };
+
+ for (const content of targetContent) {
+ if (content._type === 'webseries' && content.seasons) {
+ const seasonEntries = Object.entries(content.seasons as Record<string, any>);
+ seasonEntries.forEach(([, season], sIdx) => {
+ if (!shouldIncludeSeason(sIdx)) return;
+ if (season.episodes) {
+ const epEntries = Object.entries(season.episodes as Record<string, any>);
+ epEntries.forEach(([, ep], eIdx) => {
+ if (!shouldIncludeEpisode(eIdx)) return;
+ for (const q of qualityFields) {
+ if (ep[q] && typeof ep[q] === 'string' && ep[q].trim()) totalLinks++;
+ }
+ });
+ }
+ });
+ } else if (content._type === 'movies') {
+ for (const q of qualityFields) {
+ if (content[q] && typeof content[q] === 'string' && content[q].trim()) totalLinks++;
+ }
+ }
+ }
+
+ setProgress({ current: 0, total: totalLinks, currentTitle: "" });
+ let checked = 0;
+
+ for (const content of targetContent) {
+ if (content._type === 'webseries' && content.seasons) {
+ const seasonEntries = Object.entries(content.seasons as Record<string, any>);
+ for (let sIdx = 0; sIdx < seasonEntries.length; sIdx++) {
+ if (!shouldIncludeSeason(sIdx)) continue;
+ const [seasonKey, season] = seasonEntries[sIdx];
+ if (!season.episodes) continue;
+ const epEntries = Object.entries(season.episodes as Record<string, any>);
+ for (let eIdx = 0; eIdx < epEntries.length; eIdx++) {
+ if (!shouldIncludeEpisode(eIdx)) continue;
+ const [epKey, ep] = epEntries[eIdx];
+ for (const q of qualityFields) {
+ const url = ep[q];
+ if (!url || typeof url !== 'string' || !url.trim()) continue;
+ if (abortRef.current) break;
+
+ checked++;
+ setProgress({ current: checked, total: totalLinks, currentTitle: `${content.title} S${season.seasonNumber || '?'}E${ep.episodeNumber || '?'} (${qualityLabels[q]})` });
+
+ const ok = await checkLink(url.trim());
+ if (abortRef.current) break;
+ if (!ok) {
+ broken.push({
+ contentTitle: content.title,
+ contentId: content.id,
+ contentType: 'webseries',
+ seasonKey,
+ seasonNum: season.seasonNumber,
+ epKey,
+ epNum: ep.episodeNumber,
+ quality: qualityLabels[q],
+ qualityField: q,
+ url: url.trim(),
+ fbPath: `webseries/${content.id}/seasons/${seasonKey}/episodes/${epKey}/${q}`,
+ });
+ setBrokenLinks([...broken]);
+ }
+ await new Promise(r => setTimeout(r, 80));
+ }
+ }
+ }
+ } else if (content._type === 'movies') {
+ for (const q of qualityFields) {
+ const url = content[q];
+ if (!url || typeof url !== 'string' || !url.trim()) continue;
+ if (abortRef.current) break;
+
+ checked++;
+ setProgress({ current: checked, total: totalLinks, currentTitle: `${content.title} (${qualityLabels[q]})` });
+
+ const ok = await checkLink(url.trim());
+ if (abortRef.current) break;
+ if (!ok) {
+ broken.push({
+ contentTitle: content.title,
+ contentId: content.id,
+ contentType: 'movies',
+ quality: qualityLabels[q],
+ qualityField: q,
+ url: url.trim(),
+ fbPath: `movies/${content.id}/${q}`,
+ });
+ setBrokenLinks([...broken]);
+ }
+ await new Promise(r => setTimeout(r, 80));
+ }
+ }
+ }
+
+ if (abortRef.current) {
+ setChecking(false);
+ setDone(true);
+ const contentIds = new Set(broken.map(b => b.contentId));
+ setExpandedContent(contentIds);
+ toast.info(`check cancel doneà¥¤ ${broken.length} à¦¬à§à¦°à§‹à¦¨ link à¦ªà¦¾ gone`);
+ return;
+ }
+
+ setDone(true);
+ setChecking(false);
+ // Auto expand all content groups
+ const contentIds = new Set(broken.map(b => b.contentId));
+ setExpandedContent(contentIds);
+ toast.success(`link check à¦¸à¦®à§à¦ªà¦¨à§à¦¨! ${broken.length} à¦¬à§à¦°à§‹à¦¨ link à¦ªà¦¾ gone`);
+ };
+
+ const deleteBrokenLink = async (item: typeof brokenLinks[0], idx: number) => {
+ const key = `${idx}`;
+ setDeleting(prev => ({ ...prev, [key]: true }));
+ try {
+ await set(ref(db, item.fbPath), null);
+ setBrokenLinks(prev => prev.filter((_, i) => i !== idx));
+ toast.success(`link à¦®à§à¦›à§‡ à¦«à§‡à¦²à¦¾ done`);
+ } catch (err: any) {
+ toast.error(`à¦®à§à¦›à¦¤à§‡ failed: ${err.message}`);
+ }
+ setDeleting(prev => ({ ...prev, [key]: false }));
+ };
+
+ const deleteAllBroken = async () => {
+ if (!confirm(`${brokenLinks.length} à¦¬à§à¦°à§‹à¦¨ link Are you sure you want to delete?`)) return;
+ let deleted = 0;
+ for (const item of brokenLinks) {
+ try { await set(ref(db, item.fbPath), null); deleted++; } catch {}
+ }
+ setBrokenLinks([]);
+ toast.success(`${deleted} à¦¬à§à¦°à§‹à¦¨ link à¦®à§à¦›à§‡ à¦«à§‡à¦²à¦¾ done`);
+ };
+
+ const saveEditedUrl = async (item: typeof brokenLinks[0], idx: number) => {
+ if (!editUrl.trim()) return;
+ try {
+ await set(ref(db, item.fbPath), editUrl.trim());
+ setBrokenLinks(prev => prev.map((b, i) => i === idx ? { ...b, url: editUrl.trim() } : b));
+ setEditingIdx(null);
+ setEditUrl("");
+ toast.success("link update done");
+ } catch (err: any) {
+ toast.error(`update failed: ${err.message}`);
+ }
+ };
+
+ const applyJsonFix = async () => {
+ try {
+ const fixes = JSON.parse(jsonInput.trim());
+ if (!Array.isArray(fixes)) { toast.error("JSON à¦…à¦¬à¦¶à§à¦¯this à¦• Array à¦¹à¦¤à§‡ will be"); return; }
+ let applied = 0;
+ for (const fix of fixes) {
+ if (fix.fbPath && fix.newUrl) {
+ try {
+ await set(ref(db, fix.fbPath), fix.newUrl.trim());
+ applied++;
+ } catch {}
+ }
+ }
+ setBrokenLinks(prev => {
+ const fixMap = new Map(fixes.map((f: any) => [f.fbPath, f.newUrl]));
+ return prev.map(b => fixMap.has(b.fbPath) ? { ...b, url: fixMap.get(b.fbPath) || b.url } : b);
+ });
+ setJsonMode(false);
+ setJsonInput("");
+ toast.success(`${applied} link update done`);
+ } catch {
+ toast.error("Invalid JSON format");
+ }
+ };
+
+ // Group broken links by content
+ const groupedBroken = useMemo(() => {
+ const map = new Map<string, { title: string; id: string; type: string; items: (typeof brokenLinks[number] & { originalIdx: number })[] }>();
+ brokenLinks.forEach((item, idx) => {
+ if (!map.has(item.contentId)) {
+ map.set(item.contentId, { title: item.contentTitle, id: item.contentId, type: item.contentType, items: [] });
+ }
+ map.get(item.contentId)!.items.push({ ...item, originalIdx: idx });
+ });
+ return Array.from(map.values());
+ }, [brokenLinks]);
+
+ const toggleContentExpand = (id: string) => {
+ setExpandedContent(prev => {
+ const next = new Set(prev);
+ if (next.has(id)) next.delete(id); else next.add(id);
+ return next;
+ });
+ };
+
+ const exportBrokenJson = () => {
+ const exportData = brokenLinks.map(b => ({
+ fbPath: b.fbPath,
+ contentTitle: b.contentTitle,
+ episode: b.epNum || null,
+ season: b.seasonNum || null,
+ quality: b.quality,
+ brokenUrl: b.url,
+ newUrl: "",
+ }));
+ const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: "application/json" });
+ const a = document.createElement("a");
+ a.href = URL.createObjectURL(blob);
+ a.download = "broken-links.json";
+ a.click();
+ };
+
+ const pct = progress.total > 0 ? Math.round((progress.current / progress.total) * 100) : 0;
+
+ return (
+ <div className={`${glassCard} p-4 mb-4`}>
+ <h3 className="text-sm font-semibold mb-3.5 flex items-center gap-2">
+ <Link size={14} className="text-red-400" /> link checkà¦¾à¦°
+ </h3>
+ <p className="text-[11px] text-zinc-400 mb-3">
+ Tests real playback through CDN/Direct/Proxy routes like the user playerà¥¤ à¦¯à§‡à¦—à§à¦²à§‹ any routeà§‡this à¦ªà§à¦²à§‡ will be No à¦¸à§‡à¦—à§à¦²à§‹this à¦¬à§à¦°à§‹à¦¨ showsà¥¤
+ </p>
+
+ {!checking && !done && (
+ <div className="space-y-3">
+ <div className="flex gap-2">
+ <button onClick={() => setMode("all")}
+ className={`flex-1 py-2 text-xs font-semibold rounded-lg border transition-colors ${mode === "all" ? "bg-red-600 border-red-500 text-white" : "bg-[#141422] border-white/8 text-zinc-400 hover:text-white"}`}>
+ all content ({allContent.length})
+ </button>
+ <button onClick={() => setMode("single")}
+ className={`flex-1 py-2 text-xs font-semibold rounded-lg border transition-colors ${mode === "single" ? "bg-red-600 border-red-500 text-white" : "bg-[#141422] border-white/8 text-zinc-400 hover:text-white"}`}>
+ specific content
+ </button>
+ </div>
+
+ {mode === "single" && (
+ <div className="space-y-2">
+ <div className="relative">
+ <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
+ <input
+ value={searchQuery}
+ onChange={e => setSearchQuery(e.target.value)}
+ placeholder="content search ..."
+ className="w-full text-xs bg-zinc-800 border border-zinc-700 rounded-lg pl-8 pr-3 py-2.5 text-white placeholder-zinc-500 focus:borxœä=ÛrÜÈuïüŠæXYb¼såE»KŠdÉ”Ö‘­])ºØ®bX&f¦ÉÁ
+Œ ŒHî,ªœ—Û±_§ÖÉƒÖ•¸’Tò’J¥’_Qé²ŸsN_Ğ4fFZim'ó@€F÷éÓçŞçôŒxÒNø¨½Óë±x–…AÄÛQñÆë¬±İQğÿÃ?6ı4ıØŸğıÆÄ¿lÛÇ›½Şôò„ÅÏxrÆí«¶?Ëb–Nı!‡‹>KâY4‚îÃs6ˆ“Oä¿ö§A4l¿×ëuwzlÚîwv0Êü,3àÅQÆ£¬3ñ§Şí0@Ì²,ÖØ~µ?v‚Q¾Æâè(†Oöç^›ÍYÊ³‡<äÃŒîŒ<lÕÜÃ›RÏ¹ŸÆ‘×ğÃ°aŞ¿=ÒxÄõƒº.f;?½hŸÍÂeü2k‡ü,cÓËö›^µ7ÍÒãË”e‰¥AÄQ{‡q’²³_² ã“´=„yÎı)¼|m¾@(pÙşş>CÙ!ÛœÓº\möJÈ“Öİî‰1ñz«×Û`»lcŒ‹±o›¦Vt›­±ü&ˆv¦qŠğ¼ó»qäÇ Çäœ¥Ép_?ËÍ…¿h_gãöûjÚ,|ĞÃ<aTšf;'Aô¤İk°0öGAt¾ßıO¯lÄ‡±¸öÓ«hØ (n ±DæY2‹†~Æ Ad!Ïot±Ñ«1Nì¸OTXL‰y
+Z´aÂ>˜]M9ázã‚R<İ@”ùù_ÿáğËÏö»cÔ® =øÚlæ2yt©Ëarê€±_…‘®$A 1m5üèŠE¯ìÅóxñü¿àß?Ã?úûŸ/ÿöÅóÿ¾Ñæo<İo2AÙ]IÈL5;‹M_LO–}³‹³0`VWrN‡5h2ZŠ!S5û1w¯*,Î iüƒìÙâŸdíÍ-*uÈùá˜íÌàÔ|ìGçpŸk·x™w2?9çY‡^_©-ÒQìò~¯ÌjŠ‹L>æßÌO}\Œ¤V˜H<E¦—¡aà\›]ñøÀ@½B!Ê9/İe°ü-ì²h6ğ¤©$Ÿì—_+D=Ì€¨Ï½ ™ÌÓN“bŸ}ÆNEŸ ZÒNJ_?¦ÎğYÀŞe}à}"h t¨n1$&+«QAui1 ëQúƒìu%²"½Í5ÑƒïÆ ‚ìª½İ[´N\Ì¢~¡ä4åzñéë/ØíûlÎ§9by…­TÈÍÜún¨G­SX‹ìhÌ‡O¬u˜ | ü§ MÈÈµë…0(©¾kóAİO‚‰Ÿ\åL*BV¥öÉ,Í‚³+[ÇÑz¤×bH-tã.g–ŸÂxıë9èâ!ÂÎh–¶æ=§V0“á£l‘­†ÃŒ©ŸÂ€gœG…N×‚{»'ˆˆ”Ã|šÄç	OÓÎp–$ĞEŞ-neqæ‡9ÍÅÖ`ğÚ0ËÿÄP0n+Kb{Èn8şF»¿½¹y¢éjãkŒF<rMs,ZBç	¨d ³ÅmPI<ÑÖÜ‰dnœ¡=„aĞ ŸŒf‰O`L4`}®BX¸9»FÙx—ÅĞìNAàÚ6ä
+ZqÑÀ—Ÿÿâ§¬‚âGÒ&˜"ƒ’ø	€\ŠÈ5ba+àÌi5_şí_¹zÊA÷şîÅ?}ñü_^|ñ— {YJ½|V² ‚xqñPZåûpRÆÛÓY˜Â_şüßØ³`Äcê‡ú×_üD+ÿ/¡‹4c€•È¼Å ĞPÇ,>;cÔÇq§ÓT…€²‹}Ù~¦ÈöÏ¼¢ßÔ´&A;å“`‡#f¦ï÷˜67™öğ
+v°Cd€3 l!~ $Ã&I!†~4ä![ F°<¯!Hà¹iª0ÊÑöî÷ÊÖø–0À¡ŸğÄËíÌ»Ğ6WZÍÔbÅª”I§y™™æ§JÈÚKUïvÔOÑäšİP°ãÍ\ p$¤³!µkÙq:vâu9‡1ïÚü04å£oÑëúMi&»4O×PMòõß€•ŒŒÃ/ƒ4K×ÙË_ÿxƒ¦Á$NßñéùÀ›Â’üV²w|"îşeCz‘·/A´ñìEü¬¾Ìk’ÙiÒ ocÉİşZ…s,ı#_*YŸ?(-F•5–ÊËáLÜ’ù"^—î‚Su95œ‚gXÊøÍ0(´¥9e}’2€eræ-	)_%~:Ş´…ÌQÈı„ğÌsQmÓFneîür
+ÒVLü;èÆ¼Îäµ•kSÈõ7<ı[ñE„º€ï<¼÷1»MÓ¨!$ jtg‚Àá¼”tR£‚€K¡›°ş‰üÖ|åD£à<vFä3!aÄ¯l½)EğÉÑØ¼=
+2&/à³ÏÿQˆ%xÿn+¯¹BÉµiúE(*êÃj¶^iÔY`%#Eš·"Òğâù¯@¾Š9Ü÷Sp©^şèU f—¿óşæÖ^ãlpßÏÆİØ!k€ô{œ„òÛììhá‹#ù	÷×”W„¿Mg™ç•üËï¨§ßí ıù|›†€1Oö7çD:rÑXº¨­¾q–MÓİ.>kä'.ZTd¨°şÁjŞhÁÚÂ5 ,Øø,ÎÒİ
+éZqX–/“øN¼0‰£XEgËšÌŸNÃ+D°cş8«Â:Ë„.’QÉM„`‘]rãÛBŸ3!YIg‚‹À—SßÈˆóÎâˆ3)£’Á@Î:İÒş9öMÎ9İÆP²9”ÉaÛµ¶]`äÒé…áT¥AÀÆÜÇ>JÈ,>w\¾!,
+OÁç”5ö’UËbËaYHÁUñ<ß7Ã¼¿·ÒKå¤iG
+R#2ÓÄg‡eÕ¢u¨K¥gë=c©C'AÔ¾h÷ŠÀ|”«P»ÁšF¼Y€şåŠn1EÁe°	ÅµŒ1³âgOàåşŞ‰ §y¬E©ÂXâÏ’8BM®tÏv^uŠ°sAôå9øÜ6b;c?-è§Äº®ı÷…c€@ÉĞD¯¬aPSçÅ¸õØhÀ½©$÷ŠLt‹ã×*‡ãİNœçAä‡wF—NN©Ş½^Ëé[UÙ¾$˜D1«J,©°–Rs­¦¦X‰ƒ	ĞMI…4_)IÕDğ©Ÿ~<›göğšxK‡‹1¹qty[>¡¶9)yçéÌƒì*'×Ë¼³Æ
+GË1‰;5Y»‡ÚRò!¨î?iSTVŒ5KÂ¼DòuÎH¿*Xêc"è¸½Dç@^™P¤gÀXğ Õ}yî3c†‹¬Öë‹Õëd´òbO[ñ†İù™/ÿÙoŸ/qU.„³V8»4İ« Ä
+$ÓK€¼ãÓkU.;=y,)s}Ï÷jø©†wz.ÇOaíŸ^|ñ/ÿıı­ÓŒQÿQÒİ‰ĞPc±/eœ&(b¼2^j¤†»XAÄR¾h÷j;™JtZÉŠJ«6rUÊ¼ÂËuízmÛv3¶aÛèh‚³Çî²‘…Æw9+=GÿÇ	ò‘bDe–‰ TApFlÎ²rĞœ9a‹>H•™–É•,5[–4Õ°PµŞÂ €íå¯é6¹‹ï¥-#÷ƒİÒ†Òï%LV¿í¤ı*v®´%¢•øxRã£ÃB†÷Ïı ’1å:§¥ø¾·–ï­­­u»ŠñiãŠ¡r³ıû| <
+p§-zO™
+O¦G”Qx¡rÓ[~æ¯ÒN3öıTô]«÷™G‰"ºm‹	mN[!-vˆ;ò“Q‹Xk­å»Ì~ö+OöÌ·wYJÛ’{E/Å­¢7}o-d°Æ¼ÇjÿaÛpq0ÏRşFE(ú#¢Ö*QùŞ¹„½€G”j¿uI££h*Z]°üøä€ÈQ|Ç@|³(£q¿­®,h{F{µõDÍïË«õ\-å.ëµíøÑ7s¯j—5,7ºÅ½‰–â£E¨R»6¢	|©àÒÜUo•“#,l
+¤¨tˆRrk»UÙÓ_Ø‡êD%Ä¨rñÎG|{"—àŒyî€&Kx6K"¤©zÄ.Ê=[äVMl-ßL;ÚÙ ã•:Ê[ìØâóåú£»÷ßúğîÍ·xtëcØ¾ñCPT.Ip<!ŒÇÈÓ-Fÿ·Á5’_ßÛÔ_û½âöö“æ§¢·r¯wıÓ]ö€A›Jl·$9Àhs’ à{İâgş,Ì W9,Üƒ¿Sy‡ğWİ@àşS·¶±Ÿíïn°¼Àn4Şı+´˜`8ÊÓbŞ}\ğUs—+L‚”ßÄqÈıè@.±\ÿÂ{…{¹çÅá3nËgÁF1A¿p@Æo‡¯¼Úİ@Š…oiÂ)\NF~6öèîd†NjO“ÚÁ4¤(U÷E´_İ¦é#P#ØÍ4¶äîYpÉG{FØm ŸéåØÓÇkoÌƒóq†_7 #ë ]vüé”G££q¼g˜r¸ÆÀ6f´¹ÏˆgõZgÁ„ƒiDôò.$—I³©dòë÷àS°ª|Œê ĞË¿Ë$bMÃAGí)^°ƒD)áPxi€&<óGÀ.ğ’¸=ô#Ä¥¾Æ”®êû™MGè¹©[<IbÔZhú@÷Yr”K‹âƒXğPÛ3põ†c6Ï§	È‹güfTz˜{i2„u§gÜ’íÇHDjW8Ï¼~®Ê¸˜Ê©à\±[Äëô°“9 zÚ¡1”dËqXİq-{IqäTLº­¹«àCHğ±Ö/x~³<T“Z‘)¦H†H%‚Ñ-Œ¯	Íe	Rødùh	1[E: èëèB+9aópšÌéÃÈGô!¾¬ß™7´XCµh4›•·;éĞ‚é‚*˜çÿŒ¢Û9ƒFëqw}¿Ì¬` \^JÌèy`bH€¢%úã!¾=~pç(La@˜QAµôéŒ»fñ=z
+c?BëˆŞ4DØÑ’Fªğ~ŒŠõ@t1«&ÉYİ¾3¥cìk[Éå]³mšÜ!æÿ^›øòSZš‰S× I‡\é÷ƒlìmà.Ên·»ÑlªUVXs½¦‘ÚG&œÊö6æãÙhb8J?M§ õ£Î'qy¹Ğ‰L#Õ8áä_zİ?ï^ë‚®İhæ¥YıÁ)9•?X×È­ğäª³øÌ€±YhĞø‰fS‡{Cì§?Ñl'ua¾VæCƒÇ‹ÜÁ‚É•’q¤‰L@I¡çP›Şhn—=J„ğv†Ôaâ†Û I”,ÙÜê.ZŞä4Äüøgn›L‹–VaW›Œ?Å\öHæ6"“Úšâ)2Ogê´`K–ûx©íJœjõŞ•¾íƒbIMiX¶Z«kQ3­€´®Azçf™öÆ£C€O÷jƒ'|0‹¢	ƒiUî«iw¬ó© AµO‘j-»¹I/ğéñÓS®¯¸¦pµi«¦»¸x `ŠÅ~÷]­šÈ”74·SV¼ZãI ‘¦RŠßÙˆo7J%vgÄÃwß5Ø0•ta·?Æv'{jAé¦¹ª­¢7ÖU»Q¯·¸Ô|¥¶[î8à\àÀS­Uæ(>d_^FG®Gçæì‘HŒù.!İãŒT0ÑÂ^aI  ’xğjİ$x„M4åƒâëe!ÖÛ¸B~}Õ•l²iØ—(Æüüœİ¾Í™÷M(ÆÔoÌw³¼A˜qŞ<5Ã†¬×¦˜gLué	}¨ ½B¨
+mgÄ[
+˜K5
+ÎÓVŒY4¡V¢)O«%‚5äb’eÑét'†2'Ékd+¼‰¦ïZÕõ+WşOÒb;½f¡gó5­‡
+İ¥Õ™VMˆ¼™‰X”ı¬WQÅ~šuÒÙpˆ$Ôxùë³ú4EŠÊh3Ël|ÕÛ…Ÿ`"°wúòW¿ùŸÿ¹Îæ\9§òTô 	q‚‚ExÒ¥U÷¬0¢­¨
+%qX«¾.mĞTæ¯	>.6~„KªMŸê^†u$4gÓö6›ÚÛ"ŠüÊåğªÈ¼o×&%,JÕmXÅ›y¥9²¶0m¤½yQ†Ğ¼ÑoãŞÕºY5±næJ—£şFIu_şªœÍjn.“œK0w\I{Å£-™É¡çTlz¶]É'´mFˆQ•Ç
+a=#gÜ.äË¥#u;’ç¿
+NTâxm}çVÏN£)ï‰.ÃÅJh ¤ù
+ÌMw¡ØÚtÓŒ)^»PqÉk% ½#úªµ€ßJàÿƒª¿ÒôW¯û+ohüTü-+vÓŒäRTÎÒ6Wş/òcAÛ#GQö*•p«×»ázš”ğFŞ´*1JŞJiqå*7 wÉ›5UYLã•qÂºÌnØdßÄ(?xb=WÅœ¹ôJà:*8´ê ‰j¹31Ë(ğq'cŠa¼f~Š6å/ÑÊÄt™Ÿ¬ƒ¹¡·Waíõw oW	…ĞE3\\›R“OÕb‹N£X!ñ½š¦*8à•êw‰$5 /y‰åDÄJaYÙØ,‹¾-#Ÿ[LG3meº*UÇZÑù@æü¡c
+R8-;o¡!Z¨¼©Ò›Å«U”Ëc*0»K'ûÉä?Ùnd¿|ÕÜ¿JË|‘ùúŠI+v\Ò6ï(IËL¤_ÅÆÓZË®q­&ó¬VxÒpæ²ôç²8rX„/öÌZT”B=ßÁÁ²Ğ®=8m,µ(ÄÕb‰Q¤;êb{J<B$AKÚŠ“¡‹T|E	!æ0PÁ÷ûÈz°nS±Ií}@%ömdÉH[‹ñòW®î.RQËD Åj¾şh¤s#$<à0Br7˜™È¹í¸Oğa–Í‡q2i±kfBX®» ofş9ÿZ±¥ìFµ@ÊTU @¯ ÕüælÄøÄÙ›ù˜²²Œg2‹Àhı«¬éƒ’+(Ùè!RQºcÃx2ˆªºH*İ
+Rºóá³ ÌU*âÔ•O³N§ãi2Ä
+l®—læ›Iâ_u‚”ş{Õ¶fÄTsåy‘@²ËOX÷EŒøTbÀÉƒğcæŠ_†X†ê	Ó×U±/ÁªxÆ¥¯/´9Àr/… Ûè-v¤G)A¿ìPÛw_Ö'‹F¤º;L™È×{ÍêcYìK!nå‡Ğ¡¯˜£ôÏ&#şLÙĞ {±ŞªÎ‰î
+kÜól³; €¯hK‚…È:A™§?†÷iÎ@ñ€Õî±OÛ pÁ<Kã¤=µıjWÍ]w·<¤Jp”-.?óõÒjğ9;¥t]p“u&sq°’Ÿ~;Ä8ê~ã„%XÅ:–êcj`dĞE£¼<zBÚS·ÍúÍÜpäR•ÒÜËmK{tâ{€NÊõ]ªÅÔ¹Q@™ŠmÍXñİÀìñ‡È2»éĞyûƒ>ğ• ˜MK`º:æñTiË­¼XWÙ¦Ğ•oyïÖ!Ï-icÔÿ££ø¢LTÌYq´V•"?È¸^³ëĞjÊŞJ(‘2l³,^¯Í—‹ĞsS|šòT{F„eS”Ú69õÑİ3¥g¹âÔ„íÎÊØ)d˜¨PakK©)›d’,Ë1šRÄ»Ğê¹<ıS“~Ñel5<ùÌm›V¡Àu÷³)±8EQ‡k „©ëÀó<k¥¢~Â³&G-ÊU-»‹ô0”‚;#'íôÁ!n—I tü[ı£íÛ€ss[[.j=•¢ÜLíK¹¹£aŒX0Y»È%ªZábuö\v»
+bv†Ø‘'©Æ§¦ a?i Té†ë'*N7¬p¸nR!…Eáq“-?¤º”{SÙ>NİbP‡H[¿†ó¡ìrjTeÈ›BêyÔêÆjñH¡UÜ±ğZ4zmÄ–—h¥¿^«NŸ²&•ÿà‘³ lA‘z±ËÖñR\à6a†eİ‰vjrfîée˜ ×]JpÓ–«“ë­WÛZ9"õU¶L‰‹*ª,­a](Ãİák¤¨H«1(Ü¤ÿ¢<œMËÃ©£ªÍ:t¢XĞâèã#UZÅ#·—¨ºQeê6„ñ±Nˆ˜³†’µá9 ¿'ì¸x""ôğ¸ßb:8b—ÑŒNŠp3è…;koĞF²ĞJ{¢Xm³’¯œ±kó*`Õß+°£XÇI`ñ¸}üá<[—{³aÌĞ6Qdr~X,™’”‹RY|½Ã?—9”Âìmˆ3Hè 	Ä&‡«D÷¼Ô1e‡—î©°Xg)ebOºòjaØ«tâ
+I3Kôìx§F´û«´Uª¡ÔR'»ÛHº#šÜF³Œ™Ü´ëj1_Æ¦ûø¢•PeFéu±cd.ÚÃÛZ5F*ªg­OEõI¦Še|WpUËºº†/ëøš“¥]È­z|–û½
+Bd*À’™—ë’ŠDéS£ËVP,Y{[IÆ¬,"§ğĞ‚{î¹Dˆ•1y7H19Ã–¬ë¦NÖµ#~{n“"¢[d4ša^9ÕÏ>c;=WÏ‚4 *6êâHÕ¦r‹²å”í¢®ÑNé¤@nÜkvÀzá(¥Ô^Ë„­$¬P¥±˜e"¨¥ë"æ-µÊ‹.­Gf[¥ÜÍUÄ‚qşÜœÎ’iÈ:m³ÍNqn¹c•OòJÇş(¾@`å7ã±Í*ëŞî‡³ÔŠ|°›£‘²Ñ€RKfgÌÊDÏ?›Ê›Õ5qJ b “v*¤U W<’õ=Z!eÛ]}ãL9ˆø§ZÏşÒ‰5ùÙ¸…gĞb‹U¡læ]ì¹jéšš§}àÔF˜³‘6\$(öK±ÎK\(øÎâ4—i‚µ!JÙo`²j{ëÛœ›:^±ïsØq¿
+d`6Âòƒºg¡q¿ñ§HšUC €Ôêi% ßÜØ o#Yû¾ÏÖ×­Qüèa8;/÷‡áò‡~˜©‡]º“ÂnĞÁBOfĞX(gÉ,óœ@¡ºl´’b(v°ÒŠ~ 	¬÷€ü¢íÕ<“÷pç¢ª:¬á/§ XƒÌÜiyõUÀ:g€á;ÀH——áÂ¥¥ËC€XöCì¡ªk†–å#ÇĞ5@ìSÖJİã]]`m‹‰,N“V5*ï88u€*p*c×¼²ä´fxÁRô®«¸]¬Ïd­5Ÿv(ãå…Q«¶!Õ`Ë¶ğ}YsªĞ–Íáû²æ¢~[¶Ç‹¥ào/€²À+ŸB|Š^>NK
+„	wÜëô¶NtÅ2œ^qşYeÓÍ‘w]vH­ë‚´Óµ¤uAçbj_Îä«Äj+#.
+Œ›Æ–4_!>^w ğ‚øx-˜Ìynı¬jmõÜ±—?sCcÖPõRZşZ:²7ãÔ-
+‡˜–Å¨µ›Ô!G Ó×¾G¹‹T¨ #uó¤~V”^¤Ï±t8±Õ×·¨#sÓÔû2şÃGÁlBÙolÆÃ'¥q<:;¢¹ŒÎåÀ*Ô§¯2…híUMŒÁ*WŞĞjY–Óa±?õÛ_Ò›Y'|İÄ˜Œmo—cgúÄºÓÜ>æJ!OñOËSkóá°»t…çŞqCê›†ÄèõL}ß~Ò(i’üT¦$.^H-ìOı¨-JÄ¯ÍŸVö5ï¾ê[: á©È+Wˆ@§BAÇÁx„ˆÁGx(Jé!
+Ÿ‰“Ã±ı]§ÇQšàJ¼ààÃªÄ"'²b¿S<ıÊüğ5qvıTÀË³s° ˜¯Ê+ñGy£ç•:Xø¸œ¸PzuU…5¼òE°¾Oùîúò-)+ê+?P”±[üÄ‘å¡æÿ§”×k*-§·@zì­h0çBüÁ©²7¯Ä^E‡½–æºVCã_«&s‹½×W!nWömk•×¥Ñ¯‹JïQ•,e^LßÚ$_ÅEª	óÊş«y«ºO?Q)ºİ)‡ã¥:),I±J¥º;•Íı¥ğìŸ6ZrBö‚Sãû¸ñd>åÉL ³ ¸šïËÏö»ùøÖ{ìÁ½{=\¢èVL­OÊ¯uêí£õ­úh×ùµåÍ¿ò¼–Ñ·¹ca§ğR–ŠÈ6m¨Šu.‘ì‹]Ñf	SÍ«ñÀ…TNº(«ÖÂ²tË< Xötse‰(-Š ëúHøËh”Ô `ryÕië"ÊÁEá½¸Q˜?¥ìÚ¼.ªª_ËZzôK %Bzœ,Qâ_Ü4š®¦¹œ\Öª(×Y^o×ÄÚ©W^EÎÍ+8>Kyj±–ªûY¡¥<0wÄşi-uA™ÚÂvÇÒ\Š“m±ÚÂƒ	³ÂÊS¶„€\» æga»‚3!ÀrÌè”{§D¯¤Å	1½¥ı<™¶³¢ğÑ@”Ò“—ÿTàJ
+U±\Æ‘n-kq<a„YÊ¾šIëšUMRéŠ8¢WÑÖKëà,q’•U÷üÔu(~å‡H#B¡XS|>d’ZÚÜ©hŠJÕ%ü4Ğ‹Ñ¾îr½üÊ[X¸YWf•3ßØË ı•ÒæCÏÊÛ_¢–Ûñ¯Úpå3LVf4«˜£"ü”ğ•t`&væĞx4Úº4;MeVv³è¯Ær¯jµùIodÊ¢¿·1ëè|ÅI¯N]eƒ«PŒo ¯iîàç«˜<ï¿Y“ge„:ŠOş6øWzÇ¨8wÂW9›I>¨Ë[Q!:jØW)¬ğŒÂ
+Ê‚Äì¶^µÈB}Ü?JhlaW¬'•ÄZÉw5ËıkXÏ]Ì 'qÂ]èªÕ6•ùÜ(‘­µ¨yÓL¢.'ÎZ÷ğH<¸Nüj¬J‘abƒÛÿ  ÿÿ İ€±`

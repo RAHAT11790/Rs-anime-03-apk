@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /unlock
+Disallow: /unlock-required
+
+Sitemap: https://rsanime03.lovable.app/sitemap.xml

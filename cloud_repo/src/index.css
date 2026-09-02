@@ -1,0 +1,2042 @@
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800;900&family=Righteous&family=Russo+One&family=Orbitron:wght@500;700;900&family=Audiowide&family=Rajdhani:wght@500;600;700&family=Teko:wght@500;600;700&family=Black+Ops+One&family=Bungee&family=Bebas+Neue&family=Permanent+Marker&family=Monoton&family=Faster+One&family=Bowlby+One&family=Staatliches&family=Anton&family=Passion+One:wght@700;900&family=Alfa+Slab+One&family=Fjalla+One&family=Bungee+Shade&family=Press+Start+2P&family=Bangers&family=Rubik+Mono+One&family=Kanit:wght@700;800;900&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Telegram publishing workspace — locked Ocean Deep direction. */
+:root {
+  --telegram-canvas: 209 69% 15%;
+  --telegram-surface: 204 62% 27%;
+  --telegram-accent: 188 56% 40%;
+  --telegram-highlight: 178 43% 55%;
+}
+
+/* Hide Lovable badge */
+a[href*="lovable.dev"][target="_blank"],
+div[style*="z-index: 2147483647"],
+#lovable-badge,
+.lovable-badge {
+  display: none !important;
+}
+
+@layer base {
+  :root {
+    --background: 220 15% 90%;
+    --foreground: 220 25% 15%;
+    --card: 220 15% 92%;
+    --card-foreground: 220 25% 15%;
+    --popover: 220 15% 91%;
+    --popover-foreground: 220 25% 15%;
+    --primary: 42 80% 50%;
+    --primary-foreground: 220 25% 12%;
+    --primary-dark: 38 75% 40%;
+    --secondary: 220 10% 86%;
+    --secondary-foreground: 220 10% 40%;
+    --muted: 220 10% 82%;
+    --muted-foreground: 220 10% 50%;
+    --accent: 38 90% 48%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 220 10% 82%;
+    --input: 220 10% 86%;
+    --ring: 42 80% 50%;
+    --radius: 0.75rem;
+
+    --neu-shadow: 6px 6px 12px #b8bec7, -6px -6px 12px #ffffff;
+    --neu-shadow-sm: 3px 3px 6px #b8bec7, -3px -3px 6px #ffffff;
+    --neu-shadow-inset: inset 3px 3px 6px #b8bec7, inset -3px -3px 6px #ffffff;
+    --neu-shadow-lg: 10px 10px 20px #b8bec7, -10px -10px 20px #ffffff;
+
+    --glow-primary: 0 0 20px hsla(42, 80%, 50%, 0.4);
+    --glow-accent: 0 0 20px hsla(38, 90%, 48%, 0.4);
+
+    --premium-gold: 45 90% 55%;
+    --premium-gold-dark: 40 85% 40%;
+    --premium-bg: 220 15% 88%;
+
+    --sidebar-background: 220 15% 90%;
+    --sidebar-foreground: 220 25% 15%;
+    --sidebar-primary: 42 80% 50%;
+    --sidebar-primary-foreground: 220 25% 12%;
+    --sidebar-accent: 220 10% 86%;
+    --sidebar-accent-foreground: 220 25% 15%;
+    --sidebar-border: 220 10% 82%;
+    --sidebar-ring: 42 80% 50%;
+  }
+
+  .dark {
+    --background: 222 20% 10%;
+    --foreground: 220 15% 90%;
+    --card: 222 18% 13%;
+    --card-foreground: 220 15% 90%;
+    --popover: 222 18% 12%;
+    --popover-foreground: 220 15% 90%;
+    --primary: 42 80% 50%;
+    --primary-foreground: 222 20% 8%;
+    --primary-dark: 38 75% 40%;
+    --secondary: 222 15% 18%;
+    --secondary-foreground: 220 10% 70%;
+    --muted: 222 12% 22%;
+    --muted-foreground: 220 10% 55%;
+    --accent: 38 90% 48%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 222 12% 20%;
+    --input: 222 15% 18%;
+    --ring: 42 80% 50%;
+
+    --neu-shadow: 4px 4px 10px rgba(0,0,0,0.5), -4px -4px 10px rgba(255,255,255,0.04);
+    --neu-shadow-sm: 2px 2px 6px rgba(0,0,0,0.4), -2px -2px 6px rgba(255,255,255,0.03);
+    --neu-shadow-inset: inset 2px 2px 6px rgba(0,0,0,0.4), inset -2px -2px 6px rgba(255,255,255,0.03);
+    --neu-shadow-lg: 6px 6px 16px rgba(0,0,0,0.6), -6px -6px 16px rgba(255,255,255,0.04);
+
+    --glow-primary: 0 0 20px hsla(42, 80%, 50%, 0.3);
+    --glow-accent: 0 0 20px hsla(38, 90%, 48%, 0.3);
+
+    --premium-gold: 45 90% 55%;
+    --premium-gold-dark: 40 85% 40%;
+    --premium-bg: 222 18% 12%;
+
+    --sidebar-background: 222 20% 10%;
+    --sidebar-foreground: 220 15% 90%;
+    --sidebar-primary: 42 80% 50%;
+    --sidebar-primary-foreground: 222 20% 8%;
+    --sidebar-accent: 222 15% 18%;
+    --sidebar-accent-foreground: 220 15% 90%;
+    --sidebar-border: 222 12% 20%;
+    --sidebar-ring: 42 80% 50%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+    font-family: 'Poppins', sans-serif;
+    box-sizing: border-box;
+  }
+
+  html {
+    background: hsl(var(--background));
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    overflow-x: hidden;
+    -webkit-tap-highlight-color: transparent;
+    padding-top: env(safe-area-inset-top);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  ::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+  }
+}
+  
+  :fullscreen {
+    background: black;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  
+  :fullscreen video {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+
+@layer components {
+  /* Neumorphic card styles */
+  .glass-card {
+    background: hsl(var(--card));
+    border-radius: var(--radius);
+    box-shadow: var(--neu-shadow);
+    border: none;
+  }
+
+  .glass-card-strong {
+    background: hsl(var(--card));
+    border-radius: 24px;
+    box-shadow: var(--neu-shadow-lg);
+    border: none;
+  }
+
+  .admin-shell {
+    isolation: isolate;
+  }
+
+  .admin-optimized-panel,
+  .admin-isolated-overlay {
+    contain: layout paint style;
+    isolation: isolate;
+  }
+
+  .admin-isolated-overlay {
+    transform: translateZ(0);
+    backface-visibility: hidden;
+  }
+
+  .admin-scroll-smooth {
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .telegram-workspace {
+    font-family: 'Manrope', sans-serif;
+  }
+
+  .telegram-workspace h3 {
+    font-family: 'Sora', sans-serif;
+    letter-spacing: 0;
+  }
+
+  .telegram-workspace > .telegram-compose,
+  .telegram-workspace > .telegram-preview,
+  .telegram-workspace > .telegram-settings {
+    background: linear-gradient(145deg, hsl(var(--telegram-canvas) / 0.96), hsl(var(--telegram-surface) / 0.34));
+    border: 1px solid hsl(var(--telegram-highlight) / 0.2);
+    border-radius: 8px;
+    box-shadow: 0 18px 42px hsl(var(--telegram-canvas) / 0.28);
+  }
+
+  .telegram-workspace > .telegram-compose {
+    border-top: 3px solid hsl(var(--telegram-highlight));
+  }
+
+  .telegram-workspace > .telegram-preview {
+    border-color: hsl(var(--telegram-accent) / 0.55);
+  }
+
+  .telegram-workspace .telegram-send {
+    min-height: 52px;
+    border-radius: 8px;
+    background: linear-gradient(135deg, hsl(var(--telegram-accent)), hsl(var(--telegram-highlight)));
+    box-shadow: 0 12px 30px hsl(var(--telegram-accent) / 0.28);
+  }
+
+  .neu-raised {
+    box-shadow: var(--neu-shadow);
+  }
+
+  .neu-raised-sm {
+    box-shadow: var(--neu-shadow-sm);
+  }
+
+  .neu-inset {
+    box-shadow: var(--neu-shadow-inset);
+  }
+
+  .glow-border {
+    border: 1px solid hsla(42, 80%, 50%, 0.3);
+    box-shadow: 0 0 15px hsla(42, 80%, 50%, 0.2);
+  }
+
+  .gradient-primary {
+    background: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--accent)));
+  }
+
+  .gradient-text {
+    background: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--accent)));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .unlock-cta-button {
+    isolation: isolate;
+    transition: transform 160ms ease, box-shadow 160ms ease;
+  }
+
+  .unlock-cta-button:active {
+    transform: scale(0.985);
+  }
+
+  .unlock-cta-fill {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, hsl(var(--primary-dark) / 0.2) 0%, hsl(var(--primary-foreground) / 0.2) 50%, hsl(var(--primary-dark) / 0.45) 100%);
+    transform: translateX(-100%);
+    animation: unlockCtaFill 0.95s ease forwards;
+    pointer-events: none;
+  }
+
+  .text-glow {
+    text-shadow: 0 0 30px hsla(42, 80%, 50%, 0.4), 0 0 60px hsla(38, 90%, 48%, 0.2);
+  }
+
+  .btn-glow {
+    box-shadow: 0 6px 20px hsla(42, 80%, 50%, 0.35);
+    transition: all 0.3s ease;
+  }
+  .btn-glow:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 10px 30px hsla(42, 80%, 50%, 0.45);
+  }
+
+  .poster-hover {
+    background: linear-gradient(135deg, hsl(var(--muted)) 0%, hsl(var(--card)) 100%);
+    isolation: auto;
+    transform: none;
+    backface-visibility: visible;
+    -webkit-backface-visibility: visible;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .poster-hover {
+      transition: transform 0.18s ease, box-shadow 0.18s ease;
+    }
+    .poster-hover:hover {
+      transform: scale(1.05) translateY(-6px);
+      box-shadow: 8px 8px 20px #b8bec7, -8px -8px 20px #ffffff;
+      z-index: 10;
+    }
+  }
+
+  .poster-img {
+    background: linear-gradient(135deg, hsl(var(--muted)) 0%, hsl(var(--card)) 100%);
+    display: block;
+    opacity: 1;
+    transform: none;
+    backface-visibility: visible;
+    -webkit-backface-visibility: visible;
+  }
+
+  .admin-content-card {
+    /* content-visibility removed — was blanking cards to black while
+       fast-scrolling, then re-painting after scroll stopped. */
+    contain: layout style;
+  }
+
+  .admin-content-list-img {
+    background: linear-gradient(135deg, hsl(var(--muted)) 0%, hsl(var(--card)) 100%);
+    transform: none;
+  }
+
+  .category-bar::before {
+    content: '';
+    width: 4px;
+    height: 20px;
+    background: linear-gradient(to bottom, hsl(var(--primary)), hsl(var(--accent)));
+    border-radius: 2px;
+    display: inline-block;
+    margin-right: 8px;
+  }
+
+  /* Video player styles */
+  .player-controls-overlay {
+    background: transparent;
+  }
+
+  .player-glass {
+    background: hsl(0 0% 0% / 0.86);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    border: 1px solid hsl(0 0% 100% / 0.10);
+    box-shadow: none;
+  }
+
+  .player-menu-panel {
+    background: hsl(0 0% 0% / 0.92);
+    color: hsl(0 0% 100%);
+    border: 1px solid hsl(0 0% 100% / 0.12);
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  .player-touch-button {
+    background: hsl(0 0% 0% / 0.55);
+    color: hsl(0 0% 100%);
+    border: 0;
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    contain: paint;
+    transform: translateZ(0);
+  }
+
+  .player-touch-button:active {
+    transform: scale(0.92);
+  }
+
+  .player-touch-button--primary {
+    background: hsl(0 0% 0% / 0.6);
+    color: hsl(0 0% 100%);
+    border: 1px solid hsl(0 0% 100% / 0.14);
+    box-shadow: none;
+  }
+
+  .player-control-chip {
+    background: hsl(0 0% 0% / 0.55);
+    color: hsl(0 0% 100%);
+    border: 0;
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    touch-action: manipulation;
+    contain: paint;
+    transform: translateZ(0);
+  }
+
+  .player-controls-layer {
+    contain: layout paint;
+    will-change: opacity;
+    transform: translateZ(0);
+    background: linear-gradient(to bottom, hsl(0 0% 0% / 0.44), transparent 26%, transparent 58%, hsl(0 0% 0% / 0.52));
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+  }
+
+  /* Admin overlay / panel GPU smoothness — kills the lag the user feels when
+     popping open Admin overlays since the admin shell is one big stack of
+     conditionally-mounted overlays. */
+  .admin-surface,
+  [data-admin-overlay] {
+    contain: layout paint style;
+    transform: translateZ(0);
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+    will-change: opacity, transform;
+  }
+  .admin-surface img,
+  [data-admin-overlay] img {
+    /* content-visibility removed — same reason as .admin-content-card. */
+  }
+
+  /* AN-style 12-bar circular spinner (classic iOS/macOS loader) */
+  .player-loader-shell {
+    position: relative;
+    width: 44px;
+    height: 44px;
+    display: inline-block;
+    transform: translateZ(0);
+    will-change: transform;
+  }
+  .player-loader-petal {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 3px;
+    height: 12px;
+    margin: -20px 0 0 -1.5px;
+    transform-origin: 50% 20px;
+    background: #ffffff;
+    border-radius: 2px;
+    opacity: 1;
+    filter: drop-shadow(0 0 4px rgba(255, 255, 255, 0.85));
+    animation: anSpinnerFade 1s linear infinite;
+  }
+  .player-loader-petal:nth-child(1)  { transform: rotate(0deg);   animation-delay: -1.000s; }
+  .player-loader-petal:nth-child(2)  { transform: rotate(30deg);  animation-delay: -0.917s; }
+  .player-loader-petal:nth-child(3)  { transform: rotate(60deg);  animation-delay: -0.833s; }
+  .player-loader-petal:nth-child(4)  { transform: rotate(90deg);  animation-delay: -0.750s; }
+  .player-loader-petal:nth-child(5)  { transform: rotate(120deg); animation-delay: -0.667s; }
+  .player-loader-petal:nth-child(6)  { transform: rotate(150deg); animation-delay: -0.583s; }
+  .player-loader-petal:nth-child(7)  { transform: rotate(180deg); animation-delay: -0.500s; }
+  .player-loader-petal:nth-child(8)  { transform: rotate(210deg); animation-delay: -0.417s; }
+  .player-loader-petal:nth-child(9)  { transform: rotate(240deg); animation-delay: -0.333s; }
+  .player-loader-petal:nth-child(10) { transform: rotate(270deg); animation-delay: -0.250s; }
+  .player-loader-petal:nth-child(11) { transform: rotate(300deg); animation-delay: -0.167s; }
+  .player-loader-petal:nth-child(12) { transform: rotate(330deg); animation-delay: -0.083s; }
+
+  @keyframes anSpinnerFade {
+    0%   { opacity: 1; }
+    100% { opacity: 0.35; }
+  }
+
+  /* Keep petalSpin keyframe for any other consumer */
+  @keyframes petalSpin {
+    to { transform: rotate(360deg); }
+  }
+
+  /* Suggestion-card pending state — dim + centered amber ring */
+  .magic-card-pulse {
+    position: relative;
+    overflow: hidden;
+  }
+  .magic-card-pulse::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: hsl(0 0% 0% / 0.55);
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
+    pointer-events: none;
+    z-index: 1;
+  }
+  .magic-card-pulse::after {
+    content: "";
+    position: absolute;
+    top: 50%; left: 50%;
+    width: 36px; height: 36px;
+    margin: -18px 0 0 -18px;
+    border-radius: 9999px;
+    border: 3px solid hsl(35 95% 55% / 0.22);
+    border-top-color: hsl(35 95% 58%);
+    animation: petalSpin 0.85s linear infinite;
+    pointer-events: none;
+    z-index: 2;
+    box-shadow: 0 0 16px hsl(35 95% 55% / 0.5);
+  }
+
+
+  /* Hero slider — stable cinematic reel, one locked transition per timer cycle */
+  .hero-layer {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    transform: translate3d(var(--hero-drag-x, 0px), 0, 0);
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+    will-change: opacity, transform;
+    contain: paint;
+  }
+  .hero-panel {
+    opacity: 1;
+    background: hsl(var(--background));
+  }
+  .hero-panel-still { z-index: 1; }
+  .hero-panel-in {
+    z-index: 2;
+    animation: heroPanelIn 920ms cubic-bezier(0.2, 0.86, 0.2, 1) both;
+  }
+  .hero-panel-out {
+    z-index: 0;
+    animation: heroPanelOut 920ms cubic-bezier(0.2, 0.86, 0.2, 1) both;
+  }
+  .hero-backdrop {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transform: scale(1.035) translateZ(0);
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+    will-change: transform;
+    animation: heroBackdropDrift 8000ms linear both;
+  }
+  .hero-panel-out .hero-backdrop {
+    animation: none;
+  }
+  @keyframes heroPanelIn {
+    from { opacity: 0; transform: translate3d(2.2%, 0, 0) scale(1.012); }
+    to { opacity: 1; transform: translate3d(var(--hero-drag-x, 0px), 0, 0) scale(1); }
+  }
+  @keyframes heroPanelOut {
+    from { opacity: 1; transform: translate3d(var(--hero-drag-x, 0px), 0, 0) scale(1); }
+    to { opacity: 0; transform: translate3d(-1.4%, 0, 0) scale(1.01); }
+  }
+  @keyframes heroBackdropDrift {
+    from { transform: scale(1.035) translate3d(0, 0, 0); }
+    to { transform: scale(1.06) translate3d(-0.55%, -0.35%, 0); }
+  }
+  .hero-vignette {
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    pointer-events: none;
+    background:
+      linear-gradient(to top,
+        hsl(var(--background)) 0%,
+        hsl(var(--background) / 0.86) 18%,
+        hsl(var(--background) / 0.42) 44%,
+        hsl(var(--background) / 0.08) 74%,
+        hsl(var(--background) / 0) 100%);
+  }
+  .hero-copy-enter {
+    animation: heroCopyEnter 620ms cubic-bezier(0.2, 0.86, 0.2, 1) 120ms both;
+  }
+  @keyframes heroCopyEnter {
+    from { opacity: 0; transform: translate3d(0, 14px, 0); }
+    to { opacity: 1; transform: translate3d(0, 0, 0); }
+  }
+
+  .hero-info-card {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    width: 100%;
+    padding: 10px 10px 10px 10px;
+    border-radius: 17px;
+    background: linear-gradient(180deg, hsl(0 0% 0% / 0.55), hsl(0 0% 0% / 0.72));
+    border: 1px solid hsl(var(--primary) / 0.28);
+    backdrop-filter: blur(14px) saturate(1.15);
+    -webkit-backdrop-filter: blur(14px) saturate(1.15);
+    box-shadow:
+      0 24px 48px -18px hsl(0 0% 0% / 0.85),
+      0 6px 18px -8px hsl(var(--primary) / 0.35),
+      inset 0 1px 0 hsl(var(--primary-foreground) / 0.06);
+    text-align: left;
+    transition: transform 180ms cubic-bezier(0.2, 0.86, 0.2, 1), box-shadow 180ms ease, border-color 180ms ease;
+    cursor: pointer;
+  }
+  .hero-info-card:active {
+    transform: scale(0.985);
+  }
+  .hero-info-poster {
+    position: relative;
+    flex-shrink: 0;
+    width: 54px;
+    height: 76px;
+    border-radius: 11px;
+    overflow: hidden;
+    background: hsl(var(--muted));
+    box-shadow: 0 8px 22px -8px hsl(0 0% 0% / 0.8);
+    margin-top: -26px;
+    margin-bottom: -4px;
+    border: 1px solid hsl(var(--primary-foreground) / 0.14);
+  }
+  .hero-info-poster img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+  .hero-info-body {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    padding-right: 2px;
+    overflow: hidden;
+  }
+  .hero-info-title {
+    display: block;
+    font-size: 13.5px;
+    font-weight: 900;
+    line-height: 1.15;
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: #ffd166;
+    background-image: linear-gradient(
+      90deg,
+      #ff2d55 0%,
+      #ff9500 16%,
+      #ffd60a 32%,
+      #34c759 50%,
+      #00c7ff 66%,
+      #7c5cff 82%,
+      #ff2d95 100%
+    );
+    background-size: 220% 100%;
+    background-repeat: no-repeat;
+    -webkit-background-clip: text;
+            background-clip: text;
+    -webkit-text-fill-color: transparent;
+    -webkit-text-stroke: 0.5px rgba(0, 0, 0, 0.55);
+    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.55)) drop-shadow(0 0 6px rgba(0, 0, 0, 0.35));
+    animation: heroTitleRgb 6s linear infinite;
+    will-change: background-position;
+  }
+  @keyframes heroTitleRgb {
+    0%   { background-position: 0% 50%; }
+    100% { background-position: 220% 50%; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .hero-info-title { animation: none; }
+  }
+
+  .hero-title-logo-wrap {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 40%;
+    transform: translateY(-50%);
+    z-index: 9;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    pointer-events: none;
+    padding: 0 18px;
+    background: transparent;
+  }
+  .hero-title-text {
+    display: block;
+    max-width: 86%;
+    white-space: normal;
+    overflow-wrap: break-word;
+    word-break: normal;
+    font-family: "Bebas Neue", "Oswald", system-ui, sans-serif;
+    font-weight: 800;
+    font-size: clamp(22px, 5.6vw, 32px);
+    line-height: 1.05;
+    letter-spacing: 0.035em;
+    text-align: center;
+    text-transform: uppercase;
+    background: transparent;
+  }
+  /* Plain white title with soft black shadow for crisp legibility, no RGB animation */
+  .hero-title-handwrite {
+    position: relative;
+    color: #ffffff;
+    background: transparent;
+    -webkit-text-fill-color: #ffffff;
+    -webkit-text-stroke: 0;
+    text-shadow:
+      0 2px 6px rgba(0, 0, 0, 0.85),
+      0 4px 18px rgba(0, 0, 0, 0.65),
+      0 0 2px rgba(0, 0, 0, 0.9);
+    filter: none;
+    animation: heroTitlePop var(--hero-title-write, 700ms) cubic-bezier(0.22, 0.9, 0.2, 1) both;
+    will-change: transform, opacity;
+  }
+  @keyframes heroTitlePop {
+    0%   { opacity: 0; transform: translate3d(0, 10px, 0) scale(0.96); }
+    60%  { opacity: 1; }
+    100% { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .hero-title-handwrite { animation: none; }
+  }
+  @media (min-width: 640px) {
+    .hero-title-text { font-size: clamp(28px, 3.4vw, 40px); letter-spacing: 0.045em; }
+    .hero-title-logo-wrap { top: 40%; }
+  }
+
+
+
+
+
+  .hero-info-meta {
+    display: flex;
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: 6px;
+    color: hsl(var(--primary-foreground) / 0.82);
+    font-size: 10.5px;
+    font-weight: 700;
+    line-height: 1;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .hero-info-rating {
+    display: inline-flex;
+    align-items: center;
+    color: hsl(var(--primary));
+    font-weight: 900;
+    flex-shrink: 0;
+  }
+  .hero-info-dot {
+    display: inline-flex;
+    align-items: center;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .hero-info-dot::before {
+    content: "·";
+    margin-right: 6px;
+    opacity: 0.7;
+  }
+  .hero-info-lang {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 7px;
+    border-radius: 999px;
+    background: hsl(var(--primary) / 0.9);
+    color: hsl(var(--primary-foreground));
+    font-size: 9.5px;
+    font-weight: 900;
+    line-height: 1;
+    white-space: nowrap;
+    flex-shrink: 0;
+    margin-left: 2px;
+  }
+  .hero-watch-btn {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 34px;
+    padding: 0 12px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--accent)));
+    color: hsl(var(--primary-foreground));
+    font-size: 11px;
+    font-weight: 900;
+    letter-spacing: 0.6px;
+
+
+    line-height: 1;
+    box-shadow: 0 10px 22px -10px hsl(var(--primary) / 0.85), 0 4px 10px hsl(0 0% 0% / 0.35);
+  }
+
+  .hero-dot {
+    position: relative;
+    height: 4px;
+    min-width: 14px;
+    max-width: 48px;
+    overflow: hidden;
+    border-radius: 999px;
+    transition: width 240ms ease, flex-grow 240ms ease, max-width 240ms ease;
+  }
+  .hero-dot-track,
+  .hero-dot-fill {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+  }
+  .hero-dot-track {
+    background: hsl(var(--primary-foreground) / 0.28);
+  }
+  .hero-dot-fill {
+    background: hsl(var(--primary));
+    transform-origin: left center;
+    animation: heroProgress linear forwards;
+  }
+  @keyframes heroProgress {
+    from { transform: scaleX(0); }
+    to   { transform: scaleX(1); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .hero-panel-in, .hero-panel-out, .hero-backdrop, .hero-copy-enter, .hero-dot-fill { animation: none !important; }
+  }
+
+
+  /* YouTube-style skip burst — semi-transparent circle, no shadow,
+     centered on the tap zone. Used by both VideoPlayer and AN player. */
+  .skip-pill {
+    pointer-events: none;
+    z-index: 60;
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    width: 96px;
+    height: 96px;
+    border-radius: 9999px;
+    background: transparent;
+    color: hsl(0 0% 100%);
+    border: 0;
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    animation: skipPillPop 460ms cubic-bezier(0.2, 0.9, 0.25, 1) both;
+  }
+  .skip-pill__num { font: 700 12px/1 system-ui, -apple-system, sans-serif; letter-spacing: 0.2px; opacity: 0.95; }
+  .skip-pill--center { animation: skipPillCenterPop 420ms cubic-bezier(0.2, 0.9, 0.25, 1) both; }
+
+  @keyframes skipPillPop {
+    0%   { opacity: 0; transform: translateY(-50%) scale(0.7); }
+    35%  { opacity: 1; transform: translateY(-50%) scale(1.04); }
+    100% { opacity: 0; transform: translateY(-50%) scale(1); }
+  }
+  @keyframes skipPillCenterPop {
+    0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.7); }
+    35%  { opacity: 1; transform: translate(-50%, -50%) scale(1.04); }
+    100% { opacity: 0; transform: translate(-50%, -50%) scale(1); }
+  }
+
+  /* YouTube-style D-shaped skip overlay — a half-disc that covers one
+     side of the player. Vertically centered. Chevrons + "10 seconds"
+     text sit at the geometric center of the visible half. */
+  .skip-youtube {
+    pointer-events: none;
+    z-index: 65;
+    position: absolute;
+    top: -20%;
+    bottom: -20%;
+    width: 70%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: hsl(0 0% 100% / 0.98);
+    background: hsl(0 0% 100% / 0.22);
+    overflow: hidden;
+  }
+  .skip-youtube--left {
+    left: -28%;
+    border-top-right-radius: 55% 50%;
+    border-bottom-right-radius: 55% 50%;
+    animation: skipYoutubePopLeft 520ms cubic-bezier(0.22, 0.9, 0.25, 1) both;
+  }
+  .skip-youtube--right {
+    right: -28%;
+    border-top-left-radius: 55% 50%;
+    border-bottom-left-radius: 55% 50%;
+    animation: skipYoutubePopRight 520ms cubic-bezier(0.22, 0.9, 0.25, 1) both;
+  }
+  .skip-youtube__inner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    transform: translateX(0);
+  }
+  .skip-youtube--left  .skip-youtube__inner { transform: translateX(38%); }
+  .skip-youtube--right .skip-youtube__inner { transform: translateX(-38%); }
+  .skip-youtube__arrows {
+    font: 900 26px/1 system-ui, -apple-system, sans-serif;
+    letter-spacing: -2px;
+  }
+  .skip-youtube__time {
+    font: 700 12px/1 system-ui, -apple-system, sans-serif;
+    letter-spacing: 0.2px;
+    opacity: 0.95;
+  }
+
+  @keyframes skipYoutubePopLeft {
+    0%   { opacity: 0; transform: translateX(-6px) scale(0.96); }
+    25%  { opacity: 1; transform: translateX(0) scale(1); }
+    75%  { opacity: 1; transform: translateX(0) scale(1); }
+    100% { opacity: 0; transform: translateX(-4px) scale(0.98); }
+  }
+  @keyframes skipYoutubePopRight {
+    0%   { opacity: 0; transform: translateX(6px) scale(0.96); }
+    25%  { opacity: 1; transform: translateX(0) scale(1); }
+    75%  { opacity: 1; transform: translateX(0) scale(1); }
+    100% { opacity: 0; transform: translateX(4px) scale(0.98); }
+  }
+
+  /* Swipe-up fullscreen — compact YouTube-like push/lift response */
+  .player-fs-enter { animation: playerFsEnter 300ms cubic-bezier(0.18, 0.82, 0.22, 1) both; transform-origin: center top; }
+  .player-fs-exit  { animation: playerFsExit  220ms cubic-bezier(0.22, 0.9, 0.25, 1) both; transform-origin: center top; }
+  @keyframes playerFsEnter {
+    0%   { transform: translate3d(0, -30px, 0) scale(0.955); opacity: 0.92; }
+    58%  { transform: translate3d(0, 2px, 0) scale(1.006); opacity: 1; }
+    100% { transform: translate3d(0, 0, 0) scale(1); opacity: 1; }
+  }
+  @keyframes playerFsExit {
+    0%   { transform: translate3d(0, 12px, 0) scale(1.01); opacity: 0.95; }
+    100% { transform: translate3d(0, 0, 0) scale(1); opacity: 1; }
+  }
+
+  .player-custom-controls {
+    contain: layout paint;
+    will-change: transform, opacity;
+  }
+
+  .player-control-round,
+  .player-control-main {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: hsl(0 0% 100%);
+    background: hsl(0 0% 5% / 0.72);
+    border: 1px solid hsl(0 0% 100% / 0.14);
+    box-shadow: 0 8px 24px hsl(0 0% 0% / 0.35);
+    touch-action: manipulation;
+    transition: transform 90ms ease, background 120ms ease;
+  }
+
+  .player-control-round { width: 31px; height: 31px; border-radius: 999px; }
+  .player-control-main { width: 40px; height: 40px; border-radius: 999px; background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); }
+
+  .player-control-round:active,
+  .player-control-main:active { transform: scale(0.92); }
+
+  .player-seek {
+    height: 14px;
+    accent-color: hsl(var(--primary));
+    touch-action: none;
+  }
+
+  .player-seek::-webkit-slider-runnable-track { height: 3px; border-radius: 999px; background: hsl(0 0% 100% / 0.28); }
+  .player-seek::-webkit-slider-thumb { margin-top: -5px; width: 12px; height: 12px; border-radius: 999px; background: hsl(var(--primary)); }
+
+  .youtube-skip-burst {
+    pointer-events: none;
+    color: hsl(0 0% 100%);
+    will-change: transform, opacity;
+  }
+
+  .youtube-skip-ring {
+    width: 64px;
+    height: 64px;
+    border-radius: 999px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1px;
+    background: hsl(0 0% 0% / 0.55);
+    border: 1px solid hsl(0 0% 100% / 0.18);
+    box-shadow: 0 10px 30px hsl(0 0% 0% / 0.45);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    animation: youtubeSkipPop 420ms cubic-bezier(0.2, 0.9, 0.2, 1) both;
+  }
+
+  .youtube-skip-ring span { font-size: 12px; line-height: 1; font-weight: 800; }
+
+  .player-speed-hud {
+    position: absolute;
+    top: 14px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 55;
+    pointer-events: none;
+    padding: 5px 12px;
+    border-radius: 999px;
+    background: hsl(0 0% 0% / 0.72);
+    color: hsl(0 0% 100%);
+    font: 700 11px/1 system-ui, -apple-system, sans-serif;
+    letter-spacing: 0.5px;
+    border: 1px solid hsl(0 0% 100% / 0.18);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+
+  .player-speed-hold-hud {
+    position: absolute;
+    top: 12px;
+    left: 50%;
+    z-index: 75;
+    pointer-events: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transform: translateX(-50%);
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: hsl(0 0% 0% / 0.58);
+    color: hsl(0 0% 100%);
+    border: 1px solid hsl(0 0% 100% / 0.16);
+    font: 800 12px/1 system-ui, -apple-system, sans-serif;
+    letter-spacing: 0;
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    animation: speedHoldIn 160ms ease-out both;
+  }
+
+  @keyframes speedHoldIn {
+    from { opacity: 0; transform: translateX(-50%) translateY(-4px) scale(0.94); }
+    to { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+  }
+
+  @keyframes youtubeSkipPop {
+    0% { opacity: 0; transform: translateY(-50%) scale(0.76); }
+    18% { opacity: 1; transform: translateY(-50%) scale(1.04); }
+    100% { opacity: 0; transform: translateY(-50%) scale(1); }
+  }
+
+  @keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(30px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
+
+  .animate-fade-in-up {
+    animation: fadeInUp 0.6s ease forwards;
+  }
+
+  .skeleton-loading {
+    background: linear-gradient(90deg, hsl(var(--card)) 25%, hsl(var(--secondary)) 50%, hsl(var(--card)) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+  }
+
+  @keyframes loadingMove {
+    0% { left: -40%; }
+    100% { left: 100%; }
+  }
+
+  @keyframes logoPulse {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.1); opacity: 0.8; }
+  }
+
+  @keyframes splashHexSpin {
+    to { transform: rotate(360deg); }
+  }
+  @keyframes splashHexSpinRev {
+    to { transform: rotate(-360deg); }
+  }
+  @keyframes splashGlow {
+    0%, 100% { opacity: 0.5; transform: scale(1); }
+    50% { opacity: 1; transform: scale(1.15); }
+  }
+  @keyframes splashPetalFall {
+    0% { transform: translate3d(0,-10vh,0) rotate(0deg); opacity: 0; }
+    10% { opacity: 1; }
+    90% { opacity: 1; }
+    100% { transform: translate3d(var(--drift,40px),110vh,0) rotate(540deg); opacity: 0; }
+  }
+  @keyframes splashGlitch {
+    0%, 92%, 100% { transform: translate(0,0); }
+    93% { transform: translate(-2px,1px); }
+    95% { transform: translate(2px,-1px); }
+    97% { transform: translate(-1px,2px); }
+  }
+  @keyframes splashScan {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(100%); }
+  }
+  @keyframes splashCorner {
+    0%, 100% { opacity: 0.4; transform: scale(1); }
+    50% { opacity: 1; transform: scale(1.08); }
+  }
+  @keyframes splashBarFill {
+    0% { transform: translateX(-100%); }
+    50% { transform: translateX(0%); }
+    100% { transform: translateX(100%); }
+  }
+  @keyframes splashKanji {
+    0%, 100% { opacity: 0.15; }
+    50% { opacity: 0.35; }
+  }
+  @keyframes splashTitleShift {
+    0% { background-position: 0% 50%; }
+    100% { background-position: 300% 50%; }
+  }
+
+  /* Single anime sakura splash loader — transform/opacity only for smooth mobile performance. */
+  @keyframes sakuraPetalFall {
+    0% { transform: translate3d(0, -12vh, 0) rotate(0deg) scale(0.72); opacity: 0; }
+    8% { opacity: var(--petal-opacity, 0.75); }
+    50% { transform: translate3d(calc(var(--drift, 40px) * 0.46), 50vh, 0) rotate(240deg) scale(1); }
+    92% { opacity: var(--petal-opacity, 0.75); }
+    100% { transform: translate3d(var(--drift, 40px), 112vh, 0) rotate(520deg) scale(0.86); opacity: 0; }
+  }
+
+  @keyframes sakuraSparkRain {
+    0% { transform: translate3d(0, -10vh, 0) scale(0.35); opacity: 0; }
+    18% { opacity: 1; }
+    72% { opacity: 0.9; }
+    100% { transform: translate3d(var(--drift, 24px), 108vh, 0) scale(1.08); opacity: 0; }
+  }
+
+  @keyframes sakuraAuraSpin {
+    to { transform: rotate(360deg); }
+  }
+
+  @keyframes sakuraSoftPulse {
+    0%, 100% { transform: scale(0.985); opacity: 0.72; }
+    50% { transform: scale(1.035); opacity: 1; }
+  }
+
+  @keyframes sakuraTitleGlow {
+    0%, 100% { background-position: 0% 50%; filter: drop-shadow(0 0 10px rgba(255, 170, 215, 0.28)); }
+    50% { background-position: 100% 50%; filter: drop-shadow(0 0 18px rgba(179, 235, 255, 0.42)); }
+  }
+
+  @keyframes sakuraSheen {
+    0%, 100% { transform: translate3d(-18%, 0, 0); opacity: 0.22; }
+    50% { transform: translate3d(18%, 0, 0); opacity: 0.62; }
+  }
+
+  @keyframes splFadeIn {
+    from { opacity: 0; transform: scale(0.94); }
+    to { opacity: 1; transform: scale(1); }
+  }
+
+  @keyframes confettiBurst {
+    0% { transform: translate3d(0,0,0) rotate(0deg) scale(0.3); opacity: 0; }
+    8% { opacity: 1; }
+    100% { transform: translate3d(var(--cx, 0px), var(--cy, -80px), 0) rotate(var(--cr, 540deg)) scale(1); opacity: 0; }
+  }
+
+  @keyframes rgbConicSpin {
+    to { transform: rotate(360deg); }
+  }
+
+  /* Petal/spark ejects radially from the spinner center outward */
+  @keyframes petalEject {
+    0%   { transform: translate3d(0,0,0) rotate(0deg) scale(0.2); opacity: 0; }
+    12%  { opacity: 1; }
+    100% { transform: translate3d(var(--ex, 200px), var(--ey, 0px), 0) rotate(var(--er, 720deg)) scale(1); opacity: 0; }
+  }
+
+  /* Expanding aura rings emitted from spinner */
+  @keyframes auraRing {
+    0%   { transform: translate(-50%, -50%) scale(0.2); opacity: 0.85; }
+    80%  { opacity: 0.18; }
+    100% { transform: translate(-50%, -50%) scale(5); opacity: 0; }
+  }
+
+  /* Light beams rotating out of the spinner */
+  @keyframes beamSpin {
+    to { transform: translate(-50%, -50%) rotate(360deg); }
+  }
+
+  @keyframes sparkFlicker {
+    0%, 100% { filter: drop-shadow(0 0 6px currentColor) drop-shadow(0 0 12px currentColor); }
+    50%      { filter: drop-shadow(0 0 12px currentColor) drop-shadow(0 0 22px currentColor); }
+  }
+
+  /* Streak lines shooting outward from the spinner */
+  @keyframes streakOut {
+    0%   { transform: translate(-50%, -50%) rotate(var(--rot, 0deg)) translateX(60px) scaleX(0.2); opacity: 0; }
+    20%  { opacity: 1; }
+    100% { transform: translate(-50%, -50%) rotate(var(--rot, 0deg)) translateX(320px) scaleX(1); opacity: 0; }
+  }
+
+  /* Dots radiating outward (dust/particles) */
+  @keyframes dotOut {
+    0%   { transform: translate(-50%, -50%) scale(0.2); opacity: 0; }
+    15%  { opacity: 1; }
+    100% { transform: translate(calc(-50% + var(--dx, 0px)), calc(-50% + var(--dy, 0px))) scale(1); opacity: 0; }
+  }
+
+  /* RGB rainbow text glow cycle */
+  @keyframes rgbTextGlow {
+    0%   { text-shadow: 0 0 8px #ff0055, 0 0 18px #ff0055, 0 0 32px #ff0055; }
+    25%  { text-shadow: 0 0 8px #ffd23b, 0 0 18px #ffae00, 0 0 32px #ff5a00; }
+    50%  { text-shadow: 0 0 8px #00ff85, 0 0 18px #00d4ff, 0 0 32px #00d4ff; }
+    75%  { text-shadow: 0 0 8px #6a5cff, 0 0 18px #a855f7, 0 0 32px #ff00c8; }
+    100% { text-shadow: 0 0 8px #ff0055, 0 0 18px #ff0055, 0 0 32px #ff0055; }
+  }
+
+  /* Slow drifting anime grid + scanlines bg */
+  @keyframes bgGridDrift {
+    0%   { background-position: 0 0, 0 0; }
+    100% { background-position: 80px 80px, 0 4px; }
+  }
+
+  @keyframes auraBreath {
+    0%, 100% { transform: translate(-50%,-50%) scale(0.95); opacity: 0.55; }
+    50%      { transform: translate(-50%,-50%) scale(1.1);  opacity: 0.9; }
+  }
+
+  @keyframes runAcross {
+    0% { transform: translateX(-24px); }
+    100% { transform: translateX(96px); }
+  }
+
+  @keyframes eggPulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+  }
+
+  @keyframes tvFlicker {
+    0%, 100% { opacity: 0.9; filter: brightness(1); }
+    50% { opacity: 1; filter: brightness(1.3); }
+    25%, 75% { opacity: 0.85; filter: brightness(0.9); }
+  }
+
+  @keyframes charBounce {
+    0%, 100% { transform: translateY(0) scale(1); }
+    50% { transform: translateY(-4px) scale(1.03); }
+  }
+
+  /* Premium Gold Theme */
+  .premium-gradient {
+    background: linear-gradient(135deg, hsl(45, 90%, 55%), hsl(30, 85%, 45%), hsl(45, 90%, 55%));
+    background-size: 200% 200%;
+    animation: premiumShimmer 3s ease infinite;
+  }
+
+  .premium-card {
+    background: hsl(var(--card));
+    box-shadow: var(--neu-shadow);
+    border: none;
+  }
+
+  .premium-card-glow {
+    background: hsl(var(--card));
+    box-shadow: var(--neu-shadow-lg), 0 0 20px hsla(45, 90%, 55%, 0.1);
+    border: none;
+  }
+
+  .premium-text {
+    background: linear-gradient(135deg, hsl(45, 90%, 55%), hsl(30, 85%, 40%));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .premium-badge {
+    background: linear-gradient(135deg, hsl(45, 90%, 55%), hsl(30, 85%, 45%));
+    color: hsl(30, 20%, 8%);
+    font-weight: 700;
+  }
+
+  @keyframes premiumShimmer {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+
+  .premium-shine {
+    background-size: 200% 100%;
+    animation: premiumShimmer 2.4s ease-in-out infinite;
+  }
+
+  @keyframes unlockCtaFill {
+    0% { transform: translateX(-100%); opacity: 0.22; }
+    45% { transform: translateX(-40%); opacity: 0.5; }
+    100% { transform: translateX(0%); opacity: 0.95; }
+  }
+
+  @keyframes crownFloat {
+    0%, 100% { transform: translateY(0) rotate(0deg); }
+    25% { transform: translateY(-3px) rotate(2deg); }
+    75% { transform: translateY(-3px) rotate(-2deg); }
+  }
+
+  @keyframes rgbSpin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+
+  @keyframes rgbTextShift {
+    0% { background-position: 0% 50%; }
+    100% { background-position: 300% 50%; }
+  }
+
+  /* Fix horizontal scroll blocking on touch devices */
+  .overflow-x-auto,
+  .overflow-x-scroll {
+    touch-action: pan-x pan-y;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* =============================================================
+   LOW-END MOBILE PERFORMANCE OPTIMIZATIONS
+   Targeted at 1-2GB RAM Android devices @ 60-120Hz scrolling.
+   ============================================================= */
+
+/* GPU-accelerate scroll containers — eliminates main-thread paint jank */
+.overflow-y-auto,
+.overflow-x-auto,
+.overflow-scroll {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: auto;
+}
+
+/* Off-screen content skipping — massive win on long lists */
+.cv-auto {
+  content-visibility: auto;
+  contain-intrinsic-size: 1px 280px;
+}
+
+/* Layout containment for cards — paint isolation prevents cascading reflows */
+.anime-card,
+[data-anime-card] {
+  contain: none;
+  transform: none;
+  backface-visibility: visible;
+  -webkit-backface-visibility: visible;
+}
+
+/* Reduce blur cost on low-end devices (blur is the #1 mobile FPS killer) */
+@media (max-width: 768px) {
+  .player-glass,
+  .player-touch-button,
+  .player-menu-panel { backdrop-filter: none; -webkit-backdrop-filter: none; }
+  .youtube-skip-ring { background: hsl(var(--background) / 0.72); }
+}
+@media (prefers-reduced-transparency: reduce), (update: slow) {
+  .player-glass,
+  .player-touch-button,
+  .youtube-skip-ring { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+}
+
+/* Honor user reduced-motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Fullscreen video — promote to its own compositor layer to remove
+   enter/exit lag when toggling fullscreen on Android Chrome */
+video, iframe[title="player"] {
+  transform: translateZ(0);
+  will-change: transform;
+}
+:fullscreen video, :fullscreen iframe { width: 100% !important; height: 100% !important; }
+
+/* Keep images paintable while fast-scrolling; content-visibility on <img>
+   can show black placeholders on Android until scrolling stops. */
+img {
+  background: hsl(var(--card));
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+@media (max-width: 768px), (pointer: coarse) {
+  .backdrop-blur,
+  .backdrop-blur-sm,
+  .backdrop-blur-md,
+  .backdrop-blur-lg,
+  .backdrop-blur-xl,
+  [class*="backdrop-blur-"] {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+}
+
+/* ============================================================
+   ANDROID TV MODE — zero animations, D-pad focus rings,
+   larger hit targets. Activated by `html.tv-mode`.
+   ============================================================ */
+html.tv-mode *,
+html.tv-mode *::before,
+html.tv-mode *::after {
+  animation: none !important;
+  transition: none !important;
+  animation-duration: 0s !important;
+  transition-duration: 0s !important;
+  will-change: auto !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  scroll-behavior: auto !important;
+}
+
+/* Strong focus ring for D-pad navigation */
+html.tv-mode :focus,
+html.tv-mode :focus-visible {
+  outline: 3px solid hsl(var(--primary)) !important;
+  outline-offset: 3px !important;
+  box-shadow: 0 0 0 5px hsla(42, 90%, 55%, 0.35) !important;
+  border-radius: 8px;
+  z-index: 5;
+  position: relative;
+}
+
+/* Focused cards/buttons subtly scale-less highlight (no transform = no lag) */
+html.tv-mode button:focus,
+html.tv-mode a:focus,
+html.tv-mode [role="button"]:focus,
+html.tv-mode .anime-card:focus,
+html.tv-mode [data-anime-card]:focus,
+html.tv-mode [tabindex]:focus {
+  background-color: hsla(42, 80%, 50%, 0.18) !important;
+  filter: brightness(1.15);
+}
+
+html.tv-mode [data-anime-card]:focus,
+html.tv-mode [data-new-release-card]:focus,
+html.tv-mode .poster-hover:focus {
+  outline-offset: 6px !important;
+  filter: brightness(1.18) saturate(1.08);
+}
+
+/* Bigger tap targets on TV */
+html.tv-mode button,
+html.tv-mode a,
+html.tv-mode [role="button"] {
+  min-height: 44px;
+}
+
+/* Hide swipe-only / mobile-only hints on TV */
+html.tv-mode button,
+html.tv-mode a,
+html.tv-mode [role="button"],
+html.tv-mode [tabindex] {
+  scroll-margin-top: 120px;
+  scroll-margin-bottom: 120px;
+}
+
+html.tv-mode .mobile-only,
+html.tv-mode [data-mobile-only="true"] { display: none !important; }
+
+
+/* Make grid cards focusable look uniform */
+html.tv-mode .anime-card,
+html.tv-mode [data-anime-card] {
+  contain: none;
+  transform: none !important;
+}
+
+/* Android TV video player layout — theater shell with real content below it.
+   Uses [data-player-fs] attribute instead of :has() so it works on older
+   Chromium-based TV WebViews (Android TV 9/10) that don't support :has(). */
+html.tv-mode .rs-video-player-root {
+  background: hsl(var(--background)) !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  align-items: center !important;
+  padding: 18px 0 56px !important;
+  scroll-behavior: auto !important;
+  display: flex !important;
+  flex-direction: column !important;
+  height: 100dvh !important;
+  min-height: 100vh !important;
+  overscroll-behavior-y: contain !important;
+  touch-action: pan-y !important;
+}
+
+html.tv-mode .rs-video-player-root[data-player-fs="on"] {
+  background: #000 !important;
+  overflow: hidden !important;
+  padding: 0 !important;
+}
+
+html.tv-mode .rs-video-player-root[data-player-fs="off"] > div:first-of-type {
+  width: 100% !important;
+  max-width: 1360px !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+  padding-left: 32px !important;
+  padding-right: 32px !important;
+  height: auto !important;
+}
+
+html.tv-mode .rs-video-player-root[data-player-fs="off"] > div:first-of-type > div:first-of-type {
+  position: relative !important;
+  top: auto !important;
+}
+
+
+html.tv-mode .rs-video-player-shell {
+  width: min(calc(100vw - 64px), calc((100dvh - 280px) * 16 / 9), 1280px) !important;
+  height: auto !important;
+  aspect-ratio: 16 / 9 !important;
+  max-height: calc(100dvh - 280px) !important;
+  min-height: min(42vh, 360px) !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+  border-radius: 18px !important;
+  position: relative !important;
+  top: auto !important;
+  box-shadow: 0 28px 72px -28px hsl(0 0% 0% / 0.9), 0 0 0 1px hsl(var(--border) / 0.55) !important;
+}
+
+html.tv-mode .rs-video-player-shell.player-fs-enter {
+  width: 100vw !important;
+  height: 100vh !important;
+  min-height: 100vh !important;
+  max-height: 100vh !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+html.tv-mode .rs-video-player-shell video,
+html.tv-mode .rs-video-player-shell iframe {
+  object-fit: contain !important;
+}
+
+html.tv-mode .rs-video-player-shell button,
+html.tv-mode .rs-video-player-shell [role="button"] {
+  min-width: 48px !important;
+  min-height: 48px !important;
+  font-size: 13px !important;
+}
+
+html.tv-mode .rs-video-player-shell .player-touch-button,
+html.tv-mode .rs-video-player-shell .player-control-chip {
+  min-width: 48px !important;
+  min-height: 48px !important;
+  padding-left: 14px !important;
+  padding-right: 14px !important;
+  border-radius: 999px !important;
+}
+
+html.tv-mode .rs-video-player-shell [data-player-panel="true"] {
+  min-width: 260px !important;
+  max-height: 62vh !important;
+  font-size: 15px !important;
+  background: rgba(0, 0, 0, 0.92) !important;
+}
+
+html.tv-mode .rs-video-player-shell [data-player-panel="true"] button {
+  min-height: 48px !important;
+  font-size: 14px !important;
+}
+
+html.tv-mode .rs-video-player-root[data-player-fs="off"] > div:first-of-type > div:not(.rs-video-player-shell) {
+  max-width: min(100%, 1280px) !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+  display: block !important;
+  visibility: visible !important;
+}
+
+
+html.tv-mode .rs-video-player-root h2 {
+  font-size: 22px !important;
+}
+
+html.tv-mode .rs-video-player-root h3,
+html.tv-mode .rs-video-player-root .text-\[15px\] {
+  font-size: 18px !important;
+}
+
+html.tv-mode .rs-video-player-root .text-\[10px\],
+html.tv-mode .rs-video-player-root .text-\[11px\],
+html.tv-mode .rs-video-player-root .text-\[12px\],
+html.tv-mode .rs-video-player-root .text-\[13px\] {
+  font-size: 15px !important;
+}
+
+html.tv-mode .rs-video-player-root button[class*="w-12"][class*="h-11"] {
+  width: 72px !important;
+  height: 56px !important;
+  font-size: 18px !important;
+}
+
+html.tv-mode .rs-video-player-root .grid.grid-cols-3 {
+  grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+  gap: 20px !important;
+}
+
+html.tv-mode .rs-video-player-root .grid.grid-cols-3 button {
+  min-height: 0 !important;
+}
+
+/* AnimeSalt / AN player uses a separate shell. On a 16:9 TV its old full-width
+   video was exactly as tall as the viewport, while the fixed root clipped all
+   content below it. Keep the whole workspace scrollable and size the theater
+   from the available height, matching the main RS player. */
+html.tv-mode .rs-salt-player-root[data-player-fs="off"] {
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  align-items: center !important;
+  padding: 18px 32px 56px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  height: 100dvh !important;
+  overscroll-behavior-y: contain !important;
+  touch-action: pan-y !important;
+}
+
+html.tv-mode .rs-salt-player-root[data-player-fs="off"] > div:first-of-type {
+  width: min(100%, 1280px) !important;
+  flex: 0 0 auto !important;
+}
+
+html.tv-mode .rs-salt-player-shell {
+  width: min(calc(100vw - 64px), calc((100dvh - 280px) * 16 / 9), 1280px) !important;
+  height: auto !important;
+  aspect-ratio: 16 / 9 !important;
+  min-height: min(42vh, 360px) !important;
+  max-height: calc(100dvh - 280px) !important;
+  flex: 0 0 auto !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+  border-radius: 18px !important;
+  box-shadow: 0 28px 72px -28px hsl(0 0% 0% / 0.9), 0 0 0 1px hsl(var(--border) / 0.55) !important;
+}
+
+html.tv-mode .rs-salt-player-root[data-player-fs="on"] {
+  overflow: hidden !important;
+  padding: 0 !important;
+}
+
+html.tv-mode .rs-salt-player-root[data-player-fs="on"] .rs-salt-player-shell {
+  width: 100vw !important;
+  height: 100vh !important;
+  min-height: 100vh !important;
+  max-height: 100vh !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+html.tv-mode .rs-salt-player-content {
+  width: min(100%, 1280px) !important;
+  flex: 0 0 auto !important;
+  overflow: visible !important;
+  padding: 24px 0 0 !important;
+}
+
+html.tv-mode .rs-salt-player-content .grid.grid-cols-5 {
+  grid-template-columns: repeat(8, minmax(0, 1fr)) !important;
+  gap: 14px !important;
+}
+
+html.tv-mode .rs-salt-player-content .grid.grid-cols-3 {
+  grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
+  gap: 18px !important;
+}
+
+html.tv-mode .rs-salt-player-root button,
+html.tv-mode .rs-salt-player-root [role="button"] {
+  min-height: 48px;
+}
+
+html.tv-mode [data-no-swipe="true"] {
+  cursor: grab;
+  scroll-behavior: auto !important;
+  overscroll-behavior-inline: contain;
+}
+
+html.tv-mode [data-no-swipe="true"]:active {
+  cursor: grabbing;
+}
+
+/* ============================================================
+   Security hardening — anti-copy / anti-drag / anti-save UX
+   ============================================================
+   Determined attackers can disable these, but they block
+   casual right-click save, drag-to-download, text scraping. */
+html, body {
+  -webkit-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none; /* disable iOS long-press image menu */
+  -webkit-tap-highlight-color: transparent;
+}
+img, video, picture, svg {
+  -webkit-user-drag: none;
+  -khtml-user-drag: none;
+  -moz-user-drag: none;
+  -o-user-drag: none;
+  user-drag: none;
+  -webkit-touch-callout: none;
+}
+/* Re-enable selection where users legitimately need it */
+input, textarea, select, [contenteditable="true"], [contenteditable=""],
+.allow-select, .allow-select * {
+  -webkit-user-select: text !important;
+  user-select: text !important;
+  -webkit-touch-callout: default !important;
+}
+/* Admin route — let admins copy IDs / paste data normally */
+html[data-route="/admin"] body, html[data-route="/admin"] body * {
+  -webkit-user-select: auto;
+  user-select: auto;
+  -webkit-touch-callout: default;
+}
+
+/* ============================================================
+   DESKTOP / SMART TV / LAPTOP LAYER (≥1024px)
+   Redesigns the mobile-first UI for large screens without
+   touching mobile behavior. Pure CSS override — no JSX changes.
+   ============================================================ */
+@media (min-width: 1024px) {
+
+  /* ---------- HEADER ---------- */
+  header.fixed.top-0.left-0.right-0 {
+    height: 72px !important;
+    padding-left: 40px !important;
+    padding-right: 40px !important;
+    background: hsl(var(--background)) !important;
+    box-shadow: 0 1px 0 hsl(var(--border) / 0.6), 0 8px 24px rgba(0,0,0,0.05) !important;
+    backdrop-filter: saturate(1.1);
+  }
+  header.fixed.top-0 > *:first-child img {
+    height: 44px !important;
+    width: 44px !important;
+  }
+  /* Search bar — much wider on desktop */
+  header.fixed.top-0 > div.relative.flex-1 {
+    max-width: 560px !important;
+    margin-left: 32px !important;
+    margin-right: 32px !important;
+  }
+  header.fixed.top-0 > div.relative.flex-1 > div {
+    height: 44px !important;
+    font-size: 14px !important;
+    padding-left: 44px !important;
+  }
+  header.fixed.top-0 > div.relative.flex-1 svg {
+    width: 18px !important;
+    height: 18px !important;
+    left: 16px !important;
+  }
+  header.fixed.top-0 > div.flex.items-center {
+    gap: 10px !important;
+  }
+  header.fixed.top-0 > div.flex.items-center > * {
+    transform: scale(1.08);
+  }
+
+  /* ---------- CONVERT BOTTOM NAV → TOP HORIZONTAL PILL NAV ---------- */
+  nav.fixed.bottom-0.left-0.right-0 {
+    position: fixed !important;
+    top: 72px !important;
+    bottom: auto !important;
+    height: 62px !important;
+    padding: 0 40px !important;
+    background: hsl(var(--background)) !important;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.06), inset 0 -1px 0 hsl(var(--border) / 0.4) !important;
+    justify-content: center !important;
+    gap: 6px !important;
+    z-index: 49 !important;
+  }
+  nav.fixed.bottom-0 button {
+    flex-direction: row !important;
+    align-items: center !important;
+    gap: 10px !important;
+    padding: 10px 22px !important;
+    border-radius: 14px !important;
+  }
+  nav.fixed.bottom-0 button svg {
+    width: 20px !important;
+    height: 20px !important;
+  }
+  nav.fixed.bottom-0 button span {
+    font-size: 13px !important;
+    font-weight: 600 !important;
+  }
+  nav.fixed.bottom-0 button > span.absolute {
+    display: none !important; /* hide the top bar indicator; use bg instead */
+  }
+
+  /* ---------- MAIN CONTENT — shift below header + top nav ---------- */
+  main.relative.overflow-hidden {
+    height: calc(100vh - 72px - 62px) !important;
+    margin-top: calc(72px + 62px) !important;
+  }
+  /* Center content inside each swipe page, keeping 100vw for swipe math */
+  main.relative.overflow-hidden > div > div {
+    padding-left: max(24px, calc((100vw - 1440px) / 2)) !important;
+    padding-right: max(24px, calc((100vw - 1440px) / 2)) !important;
+  }
+
+  /* ---------- HERO SLIDER ---------- */
+  main.relative.overflow-hidden > div > div > *:first-child .hero-panel,
+  main.relative.overflow-hidden [class*="h-[44vh]"],
+  main.relative.overflow-hidden [class*="h-[50vh]"] {
+    border-radius: 24px !important;
+    overflow: hidden !important;
+    max-height: 520px !important;
+    margin-top: 8px !important;
+    box-shadow: 0 20px 50px -20px rgba(0,0,0,0.35) !important;
+  }
+  .hero-info-title { font-size: 30px !important; line-height: 1.15 !important; }
+  .hero-info-poster img, .hero-info-poster { border-radius: 14px !important; }
+  .hero-watch-btn { padding: 10px 22px !important; font-size: 14px !important; }
+
+  /* ---------- ANIME SECTION / CARD STRIPS ---------- */
+  /* Remove the mobile -mt-10 pull so sections space out cleanly */
+  main.relative.overflow-hidden section[class*="-mt-10"] {
+    margin-top: 24px !important;
+  }
+  main.relative.overflow-hidden section {
+    padding-top: 24px !important;
+    padding-bottom: 12px !important;
+  }
+  /* Section header (title bar) — bigger, more editorial */
+  main.relative.overflow-hidden section > div:first-child h3 {
+    font-size: 20px !important;
+    font-weight: 800 !important;
+    letter-spacing: -0.01em !important;
+  }
+  main.relative.overflow-hidden section > div:first-child button {
+    font-size: 13px !important;
+  }
+  /* Card horizontal strip — bigger gap, no forced snap on desktop */
+  main.relative.overflow-hidden section > div:nth-child(2) {
+    gap: 16px !important;
+    padding-left: 4px !important;
+    padding-right: 4px !important;
+    padding-bottom: 20px !important;
+    scroll-snap-type: none !important;
+  }
+
+  /* ---------- ANIME CARDS — larger on desktop ---------- */
+  .poster-hover {
+    min-width: 200px !important;
+    max-width: 220px !important;
+    border-radius: 18px !important;
+    transition: transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 220ms !important;
+  }
+  .poster-hover:hover {
+    transform: translateY(-6px) scale(1.03) !important;
+    box-shadow: 0 24px 40px -12px rgba(0,0,0,0.45), 0 0 0 2px hsl(var(--primary) / 0.6) !important;
+    z-index: 5;
+  }
+  .poster-hover p.text-\[10px\] { font-size: 14px !important; line-height: 1.25 !important; }
+  .poster-hover p.text-\[8px\] { font-size: 12px !important; }
+  .poster-hover .absolute.bottom-0 { padding: 14px !important; }
+  .poster-hover span[class*="text-[7px]"],
+  .poster-hover span[class*="text-[8px]"] { font-size: 11px !important; }
+
+  /* NewEpisodeReleases cards — inner poster-hover must NOT override the
+     already-responsive w-[124px] lg:w-[210px] wrapper. Let it fill wrapper. */
+  [data-new-release-card] .poster-hover {
+    min-width: 0 !important;
+    max-width: none !important;
+    width: 100% !important;
+  }
+
+  /* Full-page grid views (Series / Movies tabs) — more columns */
+  main.relative.overflow-hidden .grid.grid-cols-3 { grid-template-columns: repeat(5, minmax(0, 1fr)) !important; gap: 20px !important; }
+  main.relative.overflow-hidden .grid.grid-cols-2 { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; gap: 20px !important; }
+  main.relative.overflow-hidden .grid.grid-cols-3 .poster-hover,
+  main.relative.overflow-hidden .grid.grid-cols-2 .poster-hover {
+    min-width: 0 !important; max-width: none !important; width: 100% !important;
+  }
+
+  /* ---------- CATEGORY PILLS — stronger contrast ---------- */
+  main.relative.overflow-hidden div[class*="overflow-x-auto"] > button[class*="rounded-xl"],
+  main.relative.overflow-hidden div[class*="overflow-x-auto"] > button[class*="rounded-full"] {
+    padding: 10px 20px !important;
+    font-size: 13px !important;
+    border: 1px solid hsl(var(--border)) !important;
+    background: hsl(var(--card)) !important;
+    color: hsl(var(--foreground)) !important;
+  }
+  main.relative.overflow-hidden div[class*="overflow-x-auto"] > button[class*="gradient-primary"],
+  main.relative.overflow-hidden div[class*="overflow-x-auto"] > button.gradient-primary {
+    background: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--accent))) !important;
+    color: hsl(var(--primary-foreground)) !important;
+    border-color: transparent !important;
+    box-shadow: 0 6px 20px -6px hsl(var(--primary) / 0.55) !important;
+  }
+
+  /* ---------- LIVE TV — grid layout instead of stacked list ---------- */
+  main.relative.overflow-hidden .space-y-3:has(> div[class*="aspect-video"]) {
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 20px !important;
+  }
+  main.relative.overflow-hidden .space-y-3:has(> div[class*="aspect-video"]) > * {
+    margin-top: 0 !important;
+  }
+
+  /* ---------- HERO — center info card, cap width, polish ---------- */
+  main.relative.overflow-hidden [class*="h-[44vh]"],
+  main.relative.overflow-hidden [class*="h-[50vh]"] {
+    height: 62vh !important;
+    max-height: 620px !important;
+    min-height: 460px !important;
+  }
+  .hero-info-card {
+    max-width: 960px !important;
+    margin-left: auto !important;
+    margin-right: auto !important;
+    padding: 18px 26px !important;
+    border-radius: 22px !important;
+    backdrop-filter: blur(14px) saturate(1.3) !important;
+    background: linear-gradient(180deg, rgba(0,0,0,0.35), rgba(0,0,0,0.75)) !important;
+    box-shadow: 0 20px 60px -20px rgba(0,0,0,0.6) !important;
+  }
+  .hero-info-poster img { width: 84px !important; height: 120px !important; border-radius: 12px !important; }
+  .hero-info-title { font-size: 28px !important; line-height: 1.15 !important; }
+  .hero-info-meta { font-size: 13px !important; opacity: 0.9; }
+  .hero-watch-btn {
+    padding: 12px 26px !important;
+    font-size: 14px !important;
+    border-radius: 14px !important;
+    box-shadow: 0 10px 30px -8px hsl(var(--primary) / 0.6) !important;
+  }
+  .hero-title-text { font-size: clamp(48px, 6vw, 84px) !important; }
+
+  /* ---------- VIDEO PLAYER — professional theater layout ---------- */
+  /* Root becomes a scrolling column; content stacks below the player. */
+  .rs-video-player-root:not(:has(.player-fs-enter)) {
+    padding-top: 24px !important;
+    padding-bottom: 40px !important;
+  }
+  .rs-video-player-root:not(:has(.player-fs-enter)) > div:first-of-type {
+    max-width: 1280px !important;
+    margin-left: auto !important;
+    margin-right: auto !important;
+    padding-left: 24px !important;
+    padding-right: 24px !important;
+    padding-top: 0 !important;
+  }
+  /* Video shell — cap by height so there's ALWAYS room for content below.
+     Use aspect-ratio + max-width via calc so 16:9 is preserved. */
+  .rs-video-player-shell:not(.player-fs-enter) {
+    position: relative !important;
+    top: auto !important;
+    max-width: calc((100vh - 220px) * 16 / 9) !important;
+    max-height: calc(100vh - 220px) !important;
+    width: 100% !important;
+    margin-left: auto !important;
+    margin-right: auto !important;
+    border-radius: 20px !important;
+    overflow: hidden !important;
+    box-shadow: 0 40px 100px -30px rgba(0,0,0,0.7), 0 0 0 1px hsl(var(--border) / 0.4) !important;
+  }
+  /* Controls overlay scale-up */
+  .player-controls-layer { padding: 20px 28px !important; }
+  .player-controls-layer button svg { width: 26px !important; height: 26px !important; }
+  .player-controls-layer button { min-width: 40px; min-height: 40px; }
+  .player-controls-layer [class*="text-[10px]"],
+  .player-controls-layer [class*="text-[11px]"],
+  .player-controls-layer [class*="text-[12px]"],
+  .player-controls-layer .text-xs { font-size: 14px !important; }
+  .player-controls-layer .max-w-\[78px\],
+  .player-controls-layer .max-w-\[54px\],
+  .player-controls-layer .max-w-\[62px\] { max-width: none !important; }
+  .player-controls-layer .rounded-full[class*="w-16"],
+  .player-controls-layer .rounded-full[class*="w-14"] {
+    width: 88px !important; height: 88px !important;
+  }
+  .player-controls-layer .rounded-full[class*="w-16"] svg,
+  .player-controls-layer .rounded-full[class*="w-14"] svg {
+    width: 40px !important; height: 40px !important;
+  }
+  .player-controls-layer .h-1 { height: 6px !important; }
+  .player-controls-layer .h-4 { height: 24px !important; }
+
+  /* Episode chips */
+  .rs-video-player-root button[class*="w-12"][class*="h-11"] {
+    width: 60px !important;
+    height: 48px !important;
+    font-size: 15px !important;
+  }
+
+  /* "For you" grid */
+  .rs-video-player-root .grid.grid-cols-3 {
+    grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+    gap: 18px !important;
+  }
+  .rs-video-player-root .grid.grid-cols-3 .poster-hover {
+    min-width: 0 !important; max-width: none !important; width: 100% !important;
+  }
+  .rs-video-player-root .grid.grid-cols-3 p.text-xs {
+    font-size: 13px !important;
+    margin-top: 8px !important;
+  }
+
+  /* Focus rings for TV D-pad / keyboard navigation */
+  html.tv-mode button:focus-visible,
+  html.tv-mode a:focus-visible,
+  button:focus-visible {
+    outline: 3px solid hsl(var(--primary)) !important;
+    outline-offset: 3px !important;
+    border-radius: 12px;
+  }
+
+  /* Custom scrollbar on desktop */
+  main.relative.overflow-hidden > div > div::-webkit-scrollbar { width: 10px; }
+  main.relative.overflow-hidden > div > div::-webkit-scrollbar-thumb {
+    background: hsl(var(--muted)); border-radius: 8px;
+  }
+  main.relative.overflow-hidden > div > div::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--primary) / 0.6);
+  }
+}
+
+/* Extra-wide (≥1440px) — even more cards per row */
+@media (min-width: 1440px) {
+  main.relative.overflow-hidden .grid.grid-cols-3 { grid-template-columns: repeat(6, minmax(0, 1fr)) !important; }
+  main.relative.overflow-hidden .grid.grid-cols-2 { grid-template-columns: repeat(5, minmax(0, 1fr)) !important; }
+  .rs-video-player-root .grid.grid-cols-3 { grid-template-columns: repeat(6, minmax(0, 1fr)) !important; }
+  main.relative.overflow-hidden .space-y-3:has(> div[class*="aspect-video"]) {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  }
+  .poster-hover { min-width: 220px !important; max-width: 240px !important; }
+}
+
+/* Ultra-wide / 4K TV (≥1920px) */
+@media (min-width: 1920px) {
+  main.relative.overflow-hidden > div > div {
+    padding-left: max(60px, calc((100vw - 1720px) / 2)) !important;
+    padding-right: max(60px, calc((100vw - 1720px) / 2)) !important;
+  }
+  .rs-video-player-root:not(:has(.player-fs-enter)) > div:first-of-type {
+    max-width: 1620px !important;
+  }
+  .poster-hover { min-width: 240px !important; max-width: 260px !important; }
+  main.relative.overflow-hidden .grid.grid-cols-3 { grid-template-columns: repeat(7, minmax(0, 1fr)) !important; }
+}
+
+

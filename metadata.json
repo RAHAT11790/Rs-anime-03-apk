@@ -1,0 +1,6 @@
+{
+  "name": "RS Anime",
+  "description": "Stream anime series, movies, live streams, earn reward coins, and manage your watchlist.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
